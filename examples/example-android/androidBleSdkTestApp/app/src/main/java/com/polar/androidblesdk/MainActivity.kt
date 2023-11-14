@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ATTENTION! Replace with the device ID from your device.
-    private var deviceId = "BC15022D"
+    private var deviceId = "C19E1A21"
 
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var broadcastDisposable: Disposable
     private var scanDisposable: Disposable? = null
     private var autoConnectDisposable: Disposable? = null
+    private var dcDisposable: Disposable? = null
     private var hrDisposable: Disposable? = null
     private var ecgDisposable: Disposable? = null
     private var accDisposable: Disposable? = null
@@ -79,6 +80,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectButton: Button
     private lateinit var autoConnectButton: Button
     private lateinit var scanButton: Button
+    private lateinit var dataCollectButton: Button
     private lateinit var hrButton: Button
     private lateinit var ecgButton: Button
     private lateinit var accButton: Button
@@ -117,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         connectButton = findViewById(R.id.connect_button)
         autoConnectButton = findViewById(R.id.auto_connect_button)
         scanButton = findViewById(R.id.scan_button)
+        dataCollectButton = findViewById(R.id.data_collect_button)
         hrButton = findViewById(R.id.hr_button)
         ecgButton = findViewById(R.id.ecg_button)
         accButton = findViewById(R.id.acc_button)
@@ -273,6 +276,49 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        dataCollectButton.setOnClickListener{
+            val isDisposed = dcDisposable?.isDisposed ?: true
+            if (isDisposed){
+                toggleButtonDown(dataCollectButton,"Stop Collecting Data")
+                dcDisposable = api.startHrStreaming(deviceId)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                        { hrData: PolarHrData ->
+                            for (sample in hrData.samples) {
+                                Log.d(TAG, "HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}")
+                            }
+                        },
+                        { error: Throwable ->
+                            toggleButtonUp(dataCollectButton, "Data stream failed")
+                            Log.e(TAG, "HR stream failed. Reason $error")
+                        },
+                        { Log.d(TAG, "HR stream complete") }
+                    )
+                val selected: MutableMap<PolarSensorSetting.SettingType,Int> = EnumMap(PolarSensorSetting.SettingType::class.java)
+                selected[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+                selected[PolarSensorSetting.SettingType.RESOLUTION] = 16
+                selected[PolarSensorSetting.SettingType.RANGE] = 8
+                selected[PolarSensorSetting.SettingType.CHANNELS] = 3
+                val settings: PolarSensorSetting = PolarSensorSetting(selected)
+                accDisposable = api.startAccStreaming(deviceId,settings)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                        { accData: PolarAccelerometerData ->
+                            for (data in accData.samples){
+                                Log.d(TAG, "ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}")
+                            }
+                        },
+                        { error: Throwable ->
+                            Log.e(TAG, "Acc stream failed because $error")
+                        },
+                        { Log.d(TAG, "acc stream complete")}
+                    )
+            }else{
+                toggleButtonUp(dataCollectButton,"Start Data Collection")
+                dcDisposable?.dispose()
+            }
+        }
+
         hrButton.setOnClickListener {
             val isDisposed = hrDisposable?.isDisposed ?: true
             if (isDisposed) {
@@ -328,8 +374,9 @@ class MainActivity : AppCompatActivity() {
         accButton.setOnClickListener {
             val isDisposed = accDisposable?.isDisposed ?: true
             if (isDisposed) {
-                toggleButtonDown(accButton, R.string.stop_acc_stream)
-                accDisposable = requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
+                toggleButtonDown(accButton, "ASS")
+                accDisposable = hardSetStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
+                //accDisposable = requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
                     .flatMap { settings: PolarSensorSetting ->
                         api.startAccStreaming(deviceId, settings)
                     }
@@ -987,7 +1034,33 @@ class MainActivity : AppCompatActivity() {
         }
         button.background = buttonDrawable
     }
-
+//SEAN
+    private fun hardSetStreamSettings(identifier: String, feature: PolarBleApi.PolarDeviceDataType): Flowable<PolarSensorSetting> {
+        val availableSettings = api.requestStreamSettings(identifier, feature)
+        val allSettings = api.requestFullStreamSettings(identifier, feature)
+            .onErrorReturn { error: Throwable ->
+                Log.w(TAG, "Full stream settings are not available for feature $feature. REASON: $error")
+                PolarSensorSetting(emptyMap())
+            }
+        return Single.zip(availableSettings, allSettings) { available: PolarSensorSetting, all: PolarSensorSetting ->
+            if (available.settings.isEmpty()) {
+                throw Throwable("Settings are not available")
+            } else {
+                Log.d(TAG, "Feature " + feature + " available settings " + available.settings)
+                Log.d(TAG, "Feature " + feature + " all settings " + all.settings)
+                return@zip android.util.Pair(available, all)
+            }
+        }
+            .observeOn(AndroidSchedulers.mainThread())
+            .toFlowable()
+            .flatMap { sensorSettings: android.util.Pair<PolarSensorSetting, PolarSensorSetting> ->
+                DialogUtility.hardSetSettingsDialog(
+                    this@MainActivity,
+                    sensorSettings.first.settings,
+                    sensorSettings.second.settings
+                ).toFlowable()
+            }
+    }
     private fun requestStreamSettings(identifier: String, feature: PolarBleApi.PolarDeviceDataType): Flowable<PolarSensorSetting> {
         val availableSettings = api.requestStreamSettings(identifier, feature)
         val allSettings = api.requestFullStreamSettings(identifier, feature)

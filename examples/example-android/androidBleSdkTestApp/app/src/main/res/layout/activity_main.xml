@@ -54,6 +54,12 @@
             android:background="@android:color/white" />
 
         <Button
+            android:id="@+id/data_collect_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="START DATA COLLECT" />
+
+        <Button
             android:id="@+id/hr_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

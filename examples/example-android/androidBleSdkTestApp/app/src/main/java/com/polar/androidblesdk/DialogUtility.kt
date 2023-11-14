@@ -88,6 +88,83 @@ object DialogUtility {
         }
     }
 
+    private fun hardHandleSettingsGroupSelection(dialog: Dialog, rg: RadioGroup, selected: MutableMap<SettingType, Int>, type: SettingType) {
+        if (rg.childCount != 0) {
+            val s = rg.indexOfChild(dialog.findViewById(rg.checkedRadioButtonId))
+            val button = rg.getChildAt(s) as MaterialRadioButton
+            val value = Integer.valueOf(button.text.toString())
+            selected[type] = value
+        }
+    }
+
+    fun hardSetSettingsDialog(activity: Activity, available: Map<SettingType, Set<Int>>, all: Map<SettingType, Set<Int>>): Single<PolarSensorSetting> {
+
+        // custom dialog
+        val dialog = Dialog(activity)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.sensor_settings_dialog)
+        val samplingRateRg = dialog.findViewById<RadioGroup>(R.id.sampling_rate_group)
+        val resolutionRg = dialog.findViewById<RadioGroup>(R.id.resolution_group)
+        val rangeRg = dialog.findViewById<RadioGroup>(R.id.range_group)
+        val channelsRg = dialog.findViewById<RadioGroup>(R.id.channel_group)
+
+        drawAllAndAvailableSettingsGroup(
+            activity,
+            samplingRateRg,
+            SettingType.SAMPLE_RATE,
+            available,
+            all
+        )
+        drawAllAndAvailableSettingsGroup(
+            activity,
+            resolutionRg,
+            SettingType.RESOLUTION,
+            available,
+            all
+        )
+        drawAllAndAvailableSettingsGroup(activity, rangeRg, SettingType.RANGE, available, all)
+        drawAllAndAvailableSettingsGroup(activity, channelsRg, SettingType.CHANNELS, available, all)
+
+        if (samplingRateRg.childCount == 0) {
+            val noValues = dialog.findViewById<TextView>(R.id.sampling_rate_no_values)
+            noValues.visibility = View.VISIBLE
+        }
+        if (resolutionRg.childCount == 0) {
+            val noValues = dialog.findViewById<TextView>(R.id.resolution_no_values)
+            noValues.visibility = View.VISIBLE
+        }
+        if (rangeRg.childCount == 0) {
+            val noValues = dialog.findViewById<TextView>(R.id.range_no_values)
+            noValues.visibility = View.VISIBLE
+        }
+        if (channelsRg.childCount == 0) {
+            val noValues = dialog.findViewById<TextView>(R.id.channel_no_values)
+            noValues.visibility = View.VISIBLE
+        }
+        val ok = dialog.findViewById<Button>(R.id.dialog_ok_button)
+        ok.setOnClickListener { dialog.dismiss() }
+        return Single.create { e: SingleEmitter<PolarSensorSetting> ->
+            val selected: MutableMap<SettingType, Int> = EnumMap(SettingType::class.java)
+
+            //dialog.setOnDismissListener {
+                selected[SettingType.SAMPLE_RATE] = 52
+                //hardHandleSettingsGroupSelection(dialog, samplingRateRg, selected, SettingType.SAMPLE_RATE)
+                selected[SettingType.RESOLUTION] = 16
+                //hardHandleSettingsGroupSelection(dialog, resolutionRg, selected, SettingType.RESOLUTION)
+                selected[SettingType.RANGE] = 8
+                //hardHandleSettingsGroupSelection(dialog, rangeRg, selected, SettingType.RANGE)
+                selected[SettingType.CHANNELS] = 3
+                //hardHandleSettingsGroupSelection(dialog, channelsRg, selected, SettingType.CHANNELS)
+                e.onSuccess(PolarSensorSetting(selected))
+                //PolarSensorSetting(selected)
+            //}
+            //dialog.setOnCancelListener {
+            //    e.tryOnError(Throwable(""))
+            //}
+            //dialog.show()
+        }.subscribeOn(AndroidSchedulers.mainThread())
+    }
+
     private fun drawAllAndAvailableSettingsGroup(activity: Activity, rg: RadioGroup, type: SettingType, availableSettings: Map<SettingType, Set<Int>>, allSettings: Map<SettingType, Set<Int>>) {
         if (availableSettings.containsKey(type) && allSettings.containsKey(type)) {
             val availableValues = availableSettings[type]?.toList()

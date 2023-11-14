@@ -10,9 +10,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="880a8723-5a76-4eaf-b266-2c772034db9c" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/build.gradle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/build.gradle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/settings.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/settings.gradle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/DialogUtility.kt" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/DialogUtility.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/res/layout/activity_main.xml" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/res/layout/activity_main.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -28,6 +29,9 @@
   <component name="ExternalProjectsManager">
     <system id="GRADLE">
       <state>
+        <task path="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/settings.gradle">
+          <activation />
+        </task>
         <projects_view>
           <tree_state>
             <expand>
@@ -58,6 +62,7 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.cidr.known.project.marker": "true",
+    "android-custom-viewC:/Users/Sean McGuinness/AppData/Local/Android/Sdk/sources/android-31/android/view/View.java_SELECTED": "View",
     "cidr.known.project.marker": "true",
     "project.structure.last.edited": "Modules",
     "project.structure.proportion": "0.15",
@@ -169,5 +174,21 @@
       <updated>1699915543342</updated>
     </task>
     <servers />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="kotlin-line">
+          <url>file://$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt</url>
+          <line>376</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="kotlin-line">
+          <url>file://$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt</url>
+          <line>1064</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
