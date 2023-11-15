@@ -11,8 +11,8 @@
   <component name="ChangeListManager">
     <list default="true" id="880a8723-5a76-4eaf-b266-2c772034db9c" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/DialogUtility.kt" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/DialogUtility.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/res/layout/activity_main.xml" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/res/layout/activity_main.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -173,21 +173,5 @@
       <updated>1699915543342</updated>
     </task>
     <servers />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="kotlin-line">
-          <url>file://$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt</url>
-          <line>475</line>
-          <option name="timeStamp" value="5" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="kotlin-line">
-          <url>file://$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt</url>
-          <line>1256</line>
-          <option name="timeStamp" value="6" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
 </project>
