@@ -3,6 +3,7 @@ package com.polar.androidblesdk
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
@@ -151,6 +152,7 @@ class MainActivity : AppCompatActivity() {
         .setReportDelay(0)
         .build()
 
+
     @SuppressLint("MissingPermission")
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -210,15 +212,35 @@ class MainActivity : AppCompatActivity() {
             val strValueChar = strValue.toCharArray()
             val strValueLog = strValueChar[1].toInt()
             Log.d(TAG, "HeartBeat = \"$strValueLog\"")
+            val thisValDoesntMatter = BluetoothGatt.GATT
+            Log.d(TAG, thisValDoesntMatter.toString())
         }
     }
+    var secondTest = false
 
     @SuppressLint("MissingPermission")
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val name: String? = result.scanRecord?.deviceName ?: result.device.name
+            Log.d(TAG, "NonPolar Connected to $name")
             safeStopBleScan()
-            result.device.connectGatt(this@MainActivity, false, gattCallback)
+            //if (!secondTest){
+            result.device.connectGatt(
+                this@MainActivity,
+                false,
+                gattCallback,
+                BluetoothDevice.TRANSPORT_LE
+            )
+            Log.d(TAG, "FIRST CALL BACK")
+            //    secondTest = true
+            //IF YOU WANT TO DO MULTIPLE SENSORS WITH THIS METHOD THEN YOU NEED A SECOND gattCallback
+            //SINCE THE CALL BACKS ARE SENSOR SPECIFIC, THIS METHOD MAKES SENSE FOR THE NON POLAR SENSORS,
+            //OF WHICH THERE ARE 2. BUT I DON'T THINK IT MAKES SENSE FOR THE 4X POLAR SENSORS.
+            //}else{
+            //    result.device.connectGatt(this@MainActivity, false, gattCallback2, BluetoothDevice.TRANSPORT_LE)
+            //    Log.d(TAG, "SECOND CALL BACK")
+            //}
+
         }
 
         override fun onBatchScanResults(results: MutableList<ScanResult>?) {
@@ -253,17 +275,27 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    private fun subscribeToPolarHR(disposableIdx: Int, deviceIDforFunc: String){
+    private fun subscribeToPolarHR(
+        disposableIdx: Int,
+        deviceIDforFunc: String
+    ) {//THIS IS THE METHOD FOR CONNECTING A SECOND POLAR SENSOR.
         Log.d(TAG, "did it run???")
-        dcDisposable = api.startHrStreaming(deviceIDforFunc)
+        var newDisposable: Disposable = api.startHrStreaming(deviceIDforFunc)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { hrData: PolarHrData ->
                     for (sample in hrData.samples) {
-                        Log.d(
-                            TAG,
-                            "ass face HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
-                        )
+                        if (deviceIDforFunc == deviceId2) {
+                            Log.d(
+                                TAG,
+                                "ass face HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+                            )
+                        } else {
+                            Log.d(
+                                TAG,
+                                "HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+                            )
+                        }
                     }
                 },
                 { error: Throwable ->
@@ -438,7 +470,7 @@ class MainActivity : AppCompatActivity() {
             if (isDisposed) {
                 toggleButtonDown(dataCollectButton, "Stop Collecting Data")
 
-                //LOG HEART RATE DATA sean
+                /*//LOG HEART RATE DATA sean
                 dcDisposable = api.startHrStreaming(deviceId)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
@@ -457,7 +489,7 @@ class MainActivity : AppCompatActivity() {
                         { Log.d(TAG, "HR stream complete") }
                     )
 
-               /* //LOG HEART RATE DATA sean/*
+                //LOG HEART RATE DATA sean/*
                 dcDisposable2Test = api.startHrStreaming(deviceId2)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
@@ -477,7 +509,8 @@ class MainActivity : AppCompatActivity() {
                     )*/
 
                 */
-                subscribeToPolarHR(1,deviceId2)
+                subscribeToPolarHR(1, deviceId)
+                subscribeToPolarHR(1, deviceId2)
 
                 //LOG ACCELEROMETER DATA
                 val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
