@@ -1,13 +1,30 @@
 package com.polar.androidblesdk
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanSettings
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanCallback
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.ParcelUuid
 import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -26,6 +43,12 @@ import io.reactivex.rxjava3.core.Single
 import io.reactivex.rxjava3.disposables.Disposable
 import java.util.*
 
+private const val HR_SERVICE_UUID = "0000180D-0000-1000-8000-00805F9B34FB"
+private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB"
+private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF"
+private const val CHAR_FOR_NOTIFY_UUID = "00002A37-0000-1000-8000-00805F9B34FB"
+private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
+
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
@@ -34,7 +57,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ATTENTION! Replace with the device ID from your device.
-    private var deviceId = "BC15022D"
+    private var deviceId = "C19E1A21"
 
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
@@ -56,6 +79,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var broadcastDisposable: Disposable
     private var scanDisposable: Disposable? = null
     private var autoConnectDisposable: Disposable? = null
+    private var dcDisposable: Disposable? = null //this on is mine
     private var hrDisposable: Disposable? = null
     private var ecgDisposable: Disposable? = null
     private var accDisposable: Disposable? = null
@@ -79,23 +103,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectButton: Button
     private lateinit var autoConnectButton: Button
     private lateinit var scanButton: Button
-    private lateinit var hrButton: Button
-    private lateinit var ecgButton: Button
-    private lateinit var accButton: Button
-    private lateinit var gyrButton: Button
-    private lateinit var magButton: Button
-    private lateinit var ppgButton: Button
-    private lateinit var ppiButton: Button
-    private lateinit var listExercisesButton: Button
-    private lateinit var fetchExerciseButton: Button
-    private lateinit var removeExerciseButton: Button
-    private lateinit var startH10RecordingButton: Button
-    private lateinit var stopH10RecordingButton: Button
-    private lateinit var readH10RecordingStatusButton: Button
-    private lateinit var setTimeButton: Button
-    private lateinit var getTimeButton: Button
+    private lateinit var connectNpButton: Button
+    private lateinit var dataCollectButton: Button
     private lateinit var toggleSdkModeButton: Button
-    private lateinit var getDiskSpaceButton: Button
     private lateinit var changeSdkModeLedAnimationStatusButton: Button
     private lateinit var changePpiModeLedAnimationStatusButton: Button
     private lateinit var doFactoryResetButton: Button
@@ -106,7 +116,138 @@ class MainActivity : AppCompatActivity() {
     private lateinit var stopRecordingButton: Button
     private lateinit var downloadRecordingButton: Button
     private lateinit var deleteRecordingButton: Button
-    private val entryCache: MutableMap<String, MutableList<PolarOfflineRecordingEntry>> = mutableMapOf()
+    private val entryCache: MutableMap<String, MutableList<PolarOfflineRecordingEntry>> =
+        mutableMapOf()
+
+
+    private val scanFilter = ScanFilter.Builder()
+        .setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID)))
+        .build()
+
+    private val bluetoothAdapter: BluetoothAdapter by lazy {
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter
+    }
+
+    private val bleScanner by lazy {
+        bluetoothAdapter.bluetoothLeScanner
+    }
+
+    private var connectedGatt: BluetoothGatt? = null
+    private var characteristicForRead: BluetoothGattCharacteristic? = null
+    private var characteristicForWrite: BluetoothGattCharacteristic? = null
+    private var characteristicForNotify: BluetoothGattCharacteristic? = null
+
+    @SuppressLint("MissingPermission")
+    @RequiresApi(Build.VERSION_CODES.M)
+    private val scanSettings = ScanSettings.Builder()
+        .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+        .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH)
+        .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+        .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)
+        .setReportDelay(0)
+        .build()
+
+    @SuppressLint("MissingPermission")
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            val deviceAddress = gatt.device.address
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (newState == BluetoothGatt.STATE_CONNECTED) {
+                    Log.d(TAG, "connected to $deviceAddress")
+
+                    Handler(Looper.getMainLooper()).post {
+                        gatt.discoverServices() //this might cause an error b/c i'm not posting the lifecycle state
+                        //maybe add in the lifecycle state later
+                    }
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    Log.d(TAG, "disconnected from $deviceAddress")
+                    //setConnectGattToNull() may or may not need this
+                    gatt.close()
+                }
+            } else {
+                gatt.close()
+            }
+        }
+
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            Log.d(TAG, "onServicesDiscovered services.count=${gatt.services.size} status=$status")
+
+            if (status == 129) {
+                Log.d(TAG, "ERROR 129")
+                gatt.disconnect()
+                return
+            }
+
+            val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID)) ?: run {
+                Log.d(TAG, "error: service not fount: $HR_SERVICE_UUID")
+                gatt.disconnect()
+                return
+            }
+
+            connectedGatt = gatt
+            characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
+            characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
+            characteristicForNotify =
+                service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
+
+            characteristicForNotify?.let {
+                subscribeToNotifications(it, gatt)
+            } ?: run {
+                Log.d(TAG, "notify characteristic not found $CHAR_FOR_NOTIFY_UUID")
+            }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            val strValue = characteristic.value.toString(Charsets.UTF_8)
+            val strValueChar = strValue.toCharArray()
+            val strValueLog = strValueChar[1].toInt()
+            Log.d(TAG, "HeartBeat = \"$strValueLog\"")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private val scanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val name: String? = result.scanRecord?.deviceName ?: result.device.name
+            safeStopBleScan()
+            result.device.connectGatt(this@MainActivity, false, gattCallback)
+        }
+
+        override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+            Log.d(TAG, "onBatchScanResults, Ignoring")
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            Log.d(TAG, "onScanFailed errorCode=$errorCode")
+            safeStopBleScan()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeStopBleScan() {
+        bleScanner.stopScan(scanCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun subscribeToNotifications(
+        characteristic: BluetoothGattCharacteristic,
+        gatt: BluetoothGatt
+    ) {
+        val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
+        characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
+            if (!gatt.setCharacteristicNotification(characteristic, true)) {
+                Log.d(TAG, "ERROR: setNotification(true) failed for ${characteristic.uuid}")
+                return
+            }
+            cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(cccDescriptor)
+        }
+    }
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,39 +258,20 @@ class MainActivity : AppCompatActivity() {
         connectButton = findViewById(R.id.connect_button)
         autoConnectButton = findViewById(R.id.auto_connect_button)
         scanButton = findViewById(R.id.scan_button)
-        hrButton = findViewById(R.id.hr_button)
-        ecgButton = findViewById(R.id.ecg_button)
-        accButton = findViewById(R.id.acc_button)
-        gyrButton = findViewById(R.id.gyr_button)
-        magButton = findViewById(R.id.mag_button)
-        ppgButton = findViewById(R.id.ohr_ppg_button)
-        ppiButton = findViewById(R.id.ohr_ppi_button)
-        listExercisesButton = findViewById(R.id.list_exercises)
-        fetchExerciseButton = findViewById(R.id.read_exercise)
-        removeExerciseButton = findViewById(R.id.remove_exercise)
-        startH10RecordingButton = findViewById(R.id.start_h10_recording)
-        stopH10RecordingButton = findViewById(R.id.stop_h10_recording)
-        readH10RecordingStatusButton = findViewById(R.id.h10_recording_status)
-        setTimeButton = findViewById(R.id.set_time)
-        getTimeButton = findViewById(R.id.get_time)
+        connectNpButton = findViewById(R.id.connect_np_button)
+        dataCollectButton = findViewById(R.id.data_collect_button)
         toggleSdkModeButton = findViewById(R.id.toggle_SDK_mode)
-        getDiskSpaceButton = findViewById(R.id.get_disk_space)
-        changeSdkModeLedAnimationStatusButton = findViewById(R.id.change_sdk_mode_led_animation_status)
-        changePpiModeLedAnimationStatusButton = findViewById(R.id.change_ppi_mode_led_animation_status)
+        changeSdkModeLedAnimationStatusButton =
+            findViewById(R.id.change_sdk_mode_led_animation_status)
+        changePpiModeLedAnimationStatusButton =
+            findViewById(R.id.change_ppi_mode_led_animation_status)
         doFactoryResetButton = findViewById(R.id.do_factory_reset)
-
-        //Verity Sense recording buttons
-        listRecordingsButton = findViewById(R.id.list_recordings)
-        startRecordingButton = findViewById(R.id.start_recording)
-        stopRecordingButton = findViewById(R.id.stop_recording)
-        downloadRecordingButton = findViewById(R.id.download_recording)
-        deleteRecordingButton = findViewById(R.id.delete_recording)
 
         api.setPolarFilter(false)
 
         // If there is need to log what is happening inside the SDK, it can be enabled like this:
         val enableSdkLogs = false
-        if(enableSdkLogs) {
+        if (enableSdkLogs) {
             api.setApiLogger { s: String -> Log.d(API_LOGGER_TAG, s) }
         }
 
@@ -158,10 +280,8 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "BLE power: $powered")
                 bluetoothEnabled = powered
                 if (powered) {
-                    enableAllButtons()
                     showToast("Phone Bluetooth on")
                 } else {
-                    disableAllButtons()
                     showToast("Phone Bluetooth off")
                 }
             }
@@ -194,7 +314,10 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "BATTERY LEVEL: $level")
             }
 
-            override fun hrNotificationReceived(identifier: String, data: PolarHrData.PolarHrSample) {
+            override fun hrNotificationReceived(
+                identifier: String,
+                data: PolarHrData.PolarHrSample
+            ) {
                 // deprecated
             }
         })
@@ -205,7 +328,10 @@ class MainActivity : AppCompatActivity() {
                 broadcastDisposable = api.startListenForPolarHrBroadcasts(null)
                     .subscribe(
                         { polarBroadcastData: PolarHrBroadcastData ->
-                            Log.d(TAG, "HR BROADCAST ${polarBroadcastData.polarDeviceInfo.deviceId} HR: ${polarBroadcastData.hr} batt: ${polarBroadcastData.batteryStatus}")
+                            Log.d(
+                                TAG,
+                                "HR BROADCAST ${polarBroadcastData.polarDeviceInfo.deviceId} HR: ${polarBroadcastData.hr} batt: ${polarBroadcastData.batteryStatus}"
+                            )
                         },
                         { error: Throwable ->
                             toggleButtonUp(broadcastButton, R.string.listen_broadcast)
@@ -225,6 +351,7 @@ class MainActivity : AppCompatActivity() {
                 if (deviceConnected) {
                     api.disconnectFromDevice(deviceId)
                 } else {
+
                     api.connectToDevice(deviceId)
                 }
             } catch (polarInvalidArgument: PolarInvalidArgument) {
@@ -235,6 +362,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 Log.e(TAG, "Failed to $attempt. Reason $polarInvalidArgument ")
             }
+        }
+        //SEAN THIS IS WHERE TO CONNECT TO NON-POLAR DEVICE
+        connectNpButton.setOnClickListener {
+            //APPARANTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
+            bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
         }
 
         autoConnectButton.setOnClickListener {
@@ -256,7 +388,10 @@ class MainActivity : AppCompatActivity() {
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
                         { polarDeviceInfo: PolarDeviceInfo ->
-                            Log.d(TAG, "polar device found id: " + polarDeviceInfo.deviceId + " address: " + polarDeviceInfo.address + " rssi: " + polarDeviceInfo.rssi + " name: " + polarDeviceInfo.name + " isConnectable: " + polarDeviceInfo.isConnectable)
+                            Log.d(
+                                TAG,
+                                "polar device found id: " + polarDeviceInfo.deviceId + " address: " + polarDeviceInfo.address + " rssi: " + polarDeviceInfo.rssi + " name: " + polarDeviceInfo.name + " isConnectable: " + polarDeviceInfo.isConnectable
+                            )
                         },
                         { error: Throwable ->
                             toggleButtonUp(scanButton, "Scan devices")
@@ -273,541 +408,133 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        hrButton.setOnClickListener {
-            val isDisposed = hrDisposable?.isDisposed ?: true
+        dataCollectButton.setOnClickListener {
+            val isDisposed = dcDisposable?.isDisposed ?: true
             if (isDisposed) {
-                toggleButtonDown(hrButton, R.string.stop_hr_stream)
-                hrDisposable = api.startHrStreaming(deviceId)
+                toggleButtonDown(dataCollectButton, "Stop Collecting Data")
+
+                //LOG HEART RATE DATA
+                dcDisposable = api.startHrStreaming(deviceId)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
                         { hrData: PolarHrData ->
                             for (sample in hrData.samples) {
-                                Log.d(TAG, "HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}")
+                                Log.d(
+                                    TAG,
+                                    "HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+                                )
                             }
                         },
                         { error: Throwable ->
-                            toggleButtonUp(hrButton, R.string.start_hr_stream)
+                            toggleButtonUp(dataCollectButton, "Data stream failed")
                             Log.e(TAG, "HR stream failed. Reason $error")
                         },
                         { Log.d(TAG, "HR stream complete") }
                     )
-            } else {
-                toggleButtonUp(hrButton, R.string.start_hr_stream)
-                // NOTE dispose will stop streaming if it is "running"
-                hrDisposable?.dispose()
-            }
-        }
 
-        ecgButton.setOnClickListener {
-            val isDisposed = ecgDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                toggleButtonDown(ecgButton, R.string.stop_ecg_stream)
-                ecgDisposable = requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.ECG)
-                    .flatMap { settings: PolarSensorSetting ->
-                        api.startEcgStreaming(deviceId, settings)
-                    }
-                    .subscribe(
-                        { polarEcgData: PolarEcgData ->
-                            for (data in polarEcgData.samples) {
-                                Log.d(TAG, "    yV: ${data.voltage} timeStamp: ${data.timeStamp}")
-                            }
-                        },
-                        { error: Throwable ->
-                            toggleButtonUp(ecgButton, R.string.start_ecg_stream)
-                            Log.e(TAG, "ECG stream failed. Reason $error")
-                        },
-                        { Log.d(TAG, "ECG stream complete") }
-                    )
-            } else {
-                toggleButtonUp(ecgButton, R.string.start_ecg_stream)
-                // NOTE stops streaming if it is "running"
-                ecgDisposable?.dispose()
-            }
-        }
-
-        accButton.setOnClickListener {
-            val isDisposed = accDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                toggleButtonDown(accButton, R.string.stop_acc_stream)
-                accDisposable = requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
-                    .flatMap { settings: PolarSensorSetting ->
-                        api.startAccStreaming(deviceId, settings)
-                    }
+                //LOG ACCELEROMETER DATA
+                val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
+                accSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+                accSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+                accSettingsMap[PolarSensorSetting.SettingType.RANGE] = 8
+                accSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+                val accSettings = PolarSensorSetting(accSettingsMap)
+                accDisposable = api.startAccStreaming(deviceId, accSettings)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
-                        { polarAccelerometerData: PolarAccelerometerData ->
-                            for (data in polarAccelerometerData.samples) {
-                                Log.d(TAG, "ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}")
+                        { accData: PolarAccelerometerData ->
+                            for (data in accData.samples) {
+                                Log.d(
+                                    TAG,
+                                    "ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                                )
                             }
                         },
                         { error: Throwable ->
-                            toggleButtonUp(accButton, R.string.start_acc_stream)
-                            Log.e(TAG, "ACC stream failed. Reason $error")
+                            Log.e(TAG, "Acc stream failed because $error")
                         },
-                        {
-                            showToast("ACC stream complete")
-                            Log.d(TAG, "ACC stream complete")
-                        }
+                        { Log.d(TAG, "acc stream complete") }
                     )
-            } else {
-                toggleButtonUp(accButton, R.string.start_acc_stream)
-                // NOTE dispose will stop streaming if it is "running"
-                accDisposable?.dispose()
-            }
-        }
 
-        gyrButton.setOnClickListener {
-            val isDisposed = gyrDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                toggleButtonDown(gyrButton, R.string.stop_gyro_stream)
-                gyrDisposable =
-                    requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.GYRO)
-                        .flatMap { settings: PolarSensorSetting ->
-                            api.startGyroStreaming(deviceId, settings)
-                        }
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .subscribe(
-                            { polarGyroData: PolarGyroData ->
-                                for (data in polarGyroData.samples) {
-                                    Log.d(TAG, "GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}")
+                //LOG GYROMETER DATA
+                val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
+                gyrSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+                gyrSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+                gyrSettingsMap[PolarSensorSetting.SettingType.RANGE] = 2000
+                gyrSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+                val gyrSettings = PolarSensorSetting(gyrSettingsMap)
+                gyrDisposable = api.startGyroStreaming(deviceId, gyrSettings)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                        { gyrData: PolarGyroData ->
+                            for (data in gyrData.samples) {
+                                Log.d(
+                                    TAG,
+                                    "GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                                )
+                            }
+                        },
+                        { error: Throwable ->
+                            Log.e(TAG, "GYR stream failed. Reason $error")
+                        },
+                        { Log.d(TAG, "GYR stream complete") }
+                    )
+
+                //LOG MAGNOTOMETER DATA
+                val magSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
+                magSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 20
+                magSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+                magSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
+                magSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+                val magSettings = PolarSensorSetting(magSettingsMap)
+                magDisposable = api.startMagnetometerStreaming(deviceId, magSettings)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                        { polarMagData: PolarMagnetometerData ->
+                            for (data in polarMagData.samples) {
+                                Log.d(
+                                    TAG,
+                                    "MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                                )
+                            }
+                        },
+                        { error: Throwable ->
+                            Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
+                        },
+                        { Log.d(TAG, "MAGNETOMETER stream complete") }
+                    )
+
+                //LOG PPG DATA
+                val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
+                ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135
+                ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
+                //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
+                ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
+                val ppgSettings = PolarSensorSetting(ppgSettingsMap)
+                ppgDisposable = api.startPpgStreaming(deviceId, ppgSettings)
+                    .subscribe(
+                        { polarPpgData: PolarPpgData ->
+                            if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
+                                for (data in polarPpgData.samples) {
+                                    Log.d(
+                                        TAG,
+                                        "PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}"
+                                    )
                                 }
-                            },
-                            { error: Throwable ->
-                                toggleButtonUp(gyrButton, R.string.start_gyro_stream)
-                                Log.e(TAG, "GYR stream failed. Reason $error")
-                            },
-                            { Log.d(TAG, "GYR stream complete") }
-                        )
-            } else {
-                toggleButtonUp(gyrButton, R.string.start_gyro_stream)
-                // NOTE dispose will stop streaming if it is "running"
-                gyrDisposable?.dispose()
-            }
-        }
-
-        magButton.setOnClickListener {
-            val isDisposed = magDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                toggleButtonDown(magButton, R.string.stop_mag_stream)
-                magDisposable =
-                    requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.MAGNETOMETER)
-                        .flatMap { settings: PolarSensorSetting ->
-                            api.startMagnetometerStreaming(deviceId, settings)
-                        }
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .subscribe(
-                            { polarMagData: PolarMagnetometerData ->
-                                for (data in polarMagData.samples) {
-                                    Log.d(TAG, "MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}")
-                                }
-                            },
-                            { error: Throwable ->
-                                toggleButtonUp(magButton, R.string.start_mag_stream)
-                                Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
-                            },
-                            { Log.d(TAG, "MAGNETOMETER stream complete") }
-                        )
-            } else {
-                toggleButtonUp(magButton, R.string.start_mag_stream)
-                // NOTE dispose will stop streaming if it is "running"
-                magDisposable!!.dispose()
-            }
-        }
-
-        ppgButton.setOnClickListener {
-            val isDisposed = ppgDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                toggleButtonDown(ppgButton, R.string.stop_ppg_stream)
-                ppgDisposable =
-                    requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.PPG)
-                        .flatMap { settings: PolarSensorSetting ->
-                            api.startPpgStreaming(deviceId, settings)
-                        }
-                        .subscribe(
-                            { polarPpgData: PolarPpgData ->
-                                if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
-                                    for (data in polarPpgData.samples) {
-                                        Log.d(TAG, "PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}")
-                                    }
-                                }
-                            },
-                            { error: Throwable ->
-                                toggleButtonUp(ppgButton, R.string.start_ppg_stream)
-                                Log.e(TAG, "PPG stream failed. Reason $error")
-                            },
-                            { Log.d(TAG, "PPG stream complete") }
-                        )
-            } else {
-                toggleButtonUp(ppgButton, R.string.start_ppg_stream)
-                // NOTE dispose will stop streaming if it is "running"
-                ppgDisposable?.dispose()
-            }
-        }
-
-        ppiButton.setOnClickListener {
-            val isDisposed = ppiDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                toggleButtonDown(ppiButton, R.string.stop_ppi_stream)
-                ppiDisposable = api.startPpiStreaming(deviceId)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { ppiData: PolarPpiData ->
-                            for (sample in ppiData.samples) {
-                                Log.d(TAG, "PPI    ppi: ${sample.ppi} blocker: ${sample.blockerBit} errorEstimate: ${sample.errorEstimate}")
                             }
                         },
                         { error: Throwable ->
-                            toggleButtonUp(ppiButton, R.string.start_ppi_stream)
-                            Log.e(TAG, "PPI stream failed. Reason $error")
+                            Log.e(TAG, "PPG stream failed. Reason $error")
                         },
-                        { Log.d(TAG, "PPI stream complete") }
+                        { Log.d(TAG, "PPG stream complete") }
                     )
             } else {
-                toggleButtonUp(ppiButton, R.string.start_ppi_stream)
-                // NOTE dispose will stop streaming if it is "running"
-                ppiDisposable?.dispose()
-            }
-        }
-
-        listExercisesButton.setOnClickListener {
-            val isDisposed = listExercisesDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                exerciseEntries.clear()
-                listExercisesDisposable = api.listExercises(deviceId)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { polarExerciseEntry: PolarExerciseEntry ->
-                            Log.d(TAG, "next: ${polarExerciseEntry.date} path: ${polarExerciseEntry.path} id: ${polarExerciseEntry.identifier}")
-                            exerciseEntries.add(polarExerciseEntry)
-                        },
-                        { error: Throwable ->
-                            val errorDescription = "Failed to list exercises. Reason: $error"
-                            Log.w(TAG, errorDescription)
-                            showSnackbar(errorDescription)
-                        },
-                        {
-                            val completedOk = "Exercise listing completed. Listed ${exerciseEntries.count()} exercises on device $deviceId."
-                            Log.d(TAG, completedOk)
-                            showSnackbar(completedOk)
-                        }
-                    )
-            } else {
-                Log.d(TAG, "Listing of exercise entries is in progress at the moment.")
-            }
-        }
-
-        fetchExerciseButton.setOnClickListener {
-            val isDisposed = fetchExerciseDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                if (exerciseEntries.isNotEmpty()) {
-                    toggleButtonDown(fetchExerciseButton, R.string.reading_exercise)
-                    // just for the example purpose read the entry which is first on the exerciseEntries list
-                    fetchExerciseDisposable = api.fetchExercise(deviceId, exerciseEntries.first())
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .doFinally {
-                            toggleButtonUp(fetchExerciseButton, R.string.read_exercise)
-                        }
-                        .subscribe(
-                            { polarExerciseData: PolarExerciseData ->
-                                Log.d(TAG, "Exercise data count: ${polarExerciseData.hrSamples.size} samples: ${polarExerciseData.hrSamples}")
-                                var onComplete = "Exercise has ${polarExerciseData.hrSamples.size} hr samples.\n\n"
-                                if (polarExerciseData.hrSamples.size >= 3)
-                                    onComplete += "HR data {${polarExerciseData.hrSamples[0]}, ${polarExerciseData.hrSamples[1]}, ${polarExerciseData.hrSamples[2]} ...}"
-                                showDialog("Exercise data read", onComplete)
-                            },
-                            { error: Throwable ->
-                                val errorDescription = "Failed to read exercise. Reason: $error"
-                                Log.e(TAG, errorDescription)
-                                showSnackbar(errorDescription)
-                            }
-                        )
-                } else {
-                    val helpTitle = "Reading exercise is not possible"
-                    val helpMessage = "Either device has no exercise entries or you haven't list them yet. Please, create an exercise or use the \"LIST EXERCISES\" " +
-                            "button to list exercises on device."
-                    showDialog(helpTitle, helpMessage)
-                }
-            } else {
-                Log.d(TAG, "Reading of exercise is in progress at the moment.")
-            }
-        }
-
-        removeExerciseButton.setOnClickListener {
-            val isDisposed = removeExerciseDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                if (exerciseEntries.isNotEmpty()) {
-                    // just for the example purpose remove the entry which is first on the exerciseEntries list
-                    val entry = exerciseEntries.first()
-                    removeExerciseDisposable = api.removeExercise(deviceId, entry)
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .subscribe(
-                            {
-                                exerciseEntries.remove(entry)
-                                val exerciseRemovedOk = "Exercise with id:${entry.identifier} successfully removed"
-                                Log.d(TAG, exerciseRemovedOk)
-                                showSnackbar(exerciseRemovedOk)
-                            },
-                            { error: Throwable ->
-                                val exerciseRemoveFailed = "Exercise with id:${entry.identifier} remove failed: $error"
-                                Log.w(TAG, exerciseRemoveFailed)
-                                showSnackbar(exerciseRemoveFailed)
-                            }
-                        )
-                } else {
-                    val helpTitle = "Removing exercise is not possible"
-                    val helpMessage = "Either device has no exercise entries or you haven't list them yet. Please, create an exercise or use the \"LIST EXERCISES\" button to list exercises on device"
-                    showDialog(helpTitle, helpMessage)
-                }
-            } else {
-                Log.d(TAG, "Removing of exercise is in progress at the moment.")
-            }
-        }
-
-        startH10RecordingButton.setOnClickListener {
-            val isDisposed = recordingStartStopDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                val recordIdentifier = "TEST_APP_ID"
-                recordingStartStopDisposable = api.startRecording(deviceId, recordIdentifier, PolarH10OfflineExerciseApi.RecordingInterval.INTERVAL_1S, PolarH10OfflineExerciseApi.SampleType.HR)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        {
-                            val recordingStartOk = "Recording started with id $recordIdentifier"
-                            Log.d(TAG, recordingStartOk)
-                            showSnackbar(recordingStartOk)
-                        },
-                        { error: Throwable ->
-                            val title = "Recording start failed with id $recordIdentifier"
-                            val message = "Possible reasons are, the recording is already started on the device or there is exercise recorded on H10. " +
-                                    "H10 can have one recording in the memory at the time.\n\n" +
-                                    "Detailed Reason: $error"
-                            Log.e(TAG, "Recording start failed with id $recordIdentifier. Reason: $error")
-                            showDialog(title, message)
-                        }
-                    )
-            } else {
-                Log.d(TAG, "Recording start or stop request is already in progress at the moment.")
-            }
-        }
-
-        stopH10RecordingButton.setOnClickListener {
-            val isDisposed = recordingStartStopDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                recordingStartStopDisposable = api.stopRecording(deviceId)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        {
-                            val recordingStopOk = "Recording stopped"
-                            Log.d(TAG, recordingStopOk)
-                            showSnackbar(recordingStopOk)
-                        },
-                        { error: Throwable ->
-                            val recordingStopError = "Recording stop failed. Reason: $error"
-                            Log.e(TAG, recordingStopError)
-                            showSnackbar(recordingStopError)
-                        }
-                    )
-            } else {
-                Log.d(TAG, "Recording start or stop request is already in progress at the moment.")
-            }
-        }
-
-        readH10RecordingStatusButton.setOnClickListener {
-            val isDisposed = recordingStatusReadDisposable?.isDisposed ?: true
-            if (isDisposed) {
-                recordingStatusReadDisposable = api.requestRecordingStatus(deviceId)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { pair: Pair<Boolean, String> ->
-                            val recordingOn = pair.first
-                            val recordingId = pair.second
-
-                            val recordingStatus = if (!recordingOn && recordingId.isEmpty()) {
-                                "H10 Recording is OFF"
-                            } else if (!recordingOn && recordingId.isNotEmpty()) {
-                                "H10 Recording is OFF.\n\n" +
-                                        "Exercise id $recordingId is currently found on H10 memory"
-                            } else if (recordingOn && recordingId.isNotEmpty()) {
-                                "H10 Recording is ON.\n\n" +
-                                        "Exercise id $recordingId recording ongoing"
-                            } else if (recordingOn && recordingId.isEmpty()) {
-                                // This state is undefined. If recording is currently ongoing the H10 must return id of the recording
-                                "H10 Recording state UNDEFINED"
-                            } else {
-                                // This state is unreachable and should never happen
-                                "H10 recording state ERROR"
-                            }
-                            Log.d(TAG, recordingStatus)
-                            showDialog("Recording status", recordingStatus)
-                        },
-                        { error: Throwable ->
-                            val recordingStatusReadError = "Recording status read failed. Reason: $error"
-                            Log.e(TAG, recordingStatusReadError)
-                            showSnackbar(recordingStatusReadError)
-                        }
-                    )
-            } else {
-                Log.d(TAG, "Recording status request is already in progress at the moment.")
-            }
-        }
-
-        setTimeButton.setOnClickListener {
-            val calendar = Calendar.getInstance()
-            calendar.time = Date()
-            api.setLocalTime(deviceId, calendar)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    {
-                        val timeSetString = "time ${calendar.time} set to device"
-                        Log.d(TAG, timeSetString)
-                        showToast(timeSetString)
-                    },
-                    { error: Throwable -> Log.e(TAG, "set time failed: $error") }
-                )
-        }
-
-        getTimeButton.setOnClickListener {
-            api.getLocalTime(deviceId)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    { calendar ->
-                        val timeGetString = "${calendar.time} read from the device"
-                        Log.d(TAG, timeGetString)
-                        showToast(timeGetString)
-
-                    },
-                    { error: Throwable -> Log.e(TAG, "get time failed: $error") }
-                )
-        }
-
-
-        listRecordingsButton.setOnClickListener {
-            api.listOfflineRecordings(deviceId)
-                .observeOn(AndroidSchedulers.mainThread())
-                .doOnSubscribe {
-                    entryCache[deviceId] = mutableListOf()
-                }
-                .map {
-                    entryCache[deviceId]?.add(it)
-                    it
-                }
-                .subscribe(
-                    { polarOfflineRecordingEntry: PolarOfflineRecordingEntry ->
-                        Log.d(
-                            TAG,
-                            "next: ${polarOfflineRecordingEntry.date} path: ${polarOfflineRecordingEntry.path} size: ${polarOfflineRecordingEntry.size}"
-                        )
-                    },
-                    { error: Throwable -> Log.e(TAG, "Failed to list recordings: $error") },
-                    { Log.d(TAG, "list recordings complete") }
-                )
-        }
-
-        startRecordingButton.setOnClickListener {
-            //Example of starting ACC offline recording
-            Log.d(TAG, "Starts ACC recording")
-            val settings: MutableMap<PolarSensorSetting.SettingType, Int> = mutableMapOf()
-            settings[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
-            settings[PolarSensorSetting.SettingType.RESOLUTION] = 16
-            settings[PolarSensorSetting.SettingType.RANGE] = 8
-            settings[PolarSensorSetting.SettingType.CHANNELS] = 3
-            //Using a secret key managed by your own.
-            //  You can use a different key to each start recording calls.
-            //  When using key at start recording, it is also needed for the recording download, otherwise could not be decrypted
-            val yourSecret = PolarRecordingSecret(
-                byteArrayOf(
-                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-                )
-            )
-            api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()), yourSecret)
-                //Without a secret key
-                //api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()))
-                .subscribe(
-                    { Log.d(TAG, "start offline recording completed") },
-                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
-                )
-        }
-
-        stopRecordingButton.setOnClickListener {
-            //Example of stopping ACC offline recording
-            Log.d(TAG, "Stops ACC recording")
-            api.stopOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
-                .subscribe(
-                    { Log.d(TAG, "stop offline recording completed") },
-                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
-                )
-        }
-
-        downloadRecordingButton.setOnClickListener {
-            //Example of one offline recording download
-            //NOTE: For this example you need to click on listRecordingsButton to have files entry (entryCache) up to date
-            Log.d(TAG, "Searching to recording to download... ")
-            //Get first entry for testing download
-            val offlineRecEntry = entryCache[deviceId]?.firstOrNull()
-            offlineRecEntry?.let { offlineEntry ->
-                try {
-                    //Using a secret key managed by your own.
-                    //  You can use a different key to each start recording calls.
-                    //  When using key at start recording, it is also needed for the recording download, otherwise could not be decrypted
-                    val yourSecret = PolarRecordingSecret(
-                        byteArrayOf(
-                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-                        )
-                    )
-                    api.getOfflineRecord(deviceId, offlineEntry, yourSecret)
-                        //Not using a secret key
-                        //api.getOfflineRecord(deviceId, offlineEntry)
-                        .subscribe(
-                            {
-                                Log.d(TAG, "Recording ${offlineEntry.path} downloaded. Size: ${offlineEntry.size}")
-                                when (it) {
-                                    is PolarOfflineRecordingData.AccOfflineRecording -> {
-                                        Log.d(TAG, "ACC Recording started at ${it.startTime}")
-                                        for (sample in it.data.samples) {
-                                            Log.d(TAG, "ACC data: time: ${sample.timeStamp} X: ${sample.x} Y: ${sample.y} Z: ${sample.z}")
-                                        }
-                                    }
-//                      is PolarOfflineRecordingData.GyroOfflineRecording -> { }
-//                      is PolarOfflineRecordingData.MagOfflineRecording -> { }
-//                      ...
-                                    else -> {
-                                        Log.d(TAG, "Recording type is not yet implemented")
-                                    }
-                                }
-                            },
-                            { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
-                        )
-                } catch (e: Exception) {
-                    Log.e(TAG, "Get offline recording fetch failed on entry ...", e)
-                }
-            }
-        }
-
-        deleteRecordingButton.setOnClickListener {
-            //Example of one offline recording deletion
-            //NOTE: For this example you need to click on listRecordingsButton to have files entry (entryCache) up to date
-            Log.d(TAG, "Searching to recording to delete... ")
-            //Get first entry for testing deletion
-            val offlineRecEntry = entryCache[deviceId]?.firstOrNull()
-            offlineRecEntry?.let { offlineEntry ->
-                try {
-                    api.removeOfflineRecord(deviceId, offlineEntry)
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .subscribe(
-                            {
-                                Log.d(TAG, "Recording file deleted")
-                            },
-                            { error ->
-                                val errorString = "Recording file deletion failed: $error"
-                                showToast(errorString)
-                                Log.e(TAG, errorString)
-                            }
-                        )
-
-                } catch (e: Exception) {
-                    Log.e(TAG, "Delete offline recording failed on entry ...", e)
-                }
+                toggleButtonUp(dataCollectButton, "Start Data Collection")
+                dcDisposable?.dispose()
             }
         }
 
@@ -854,24 +581,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        getDiskSpaceButton.setOnClickListener {
-            api.getDiskSpace(deviceId)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    { diskSpace ->
-                        Log.d(TAG, "disk space: $diskSpace")
-                        showToast("Disk space left: ${diskSpace.freeSpace}/${diskSpace.totalSpace} Bytes")
-                    },
-                    { error: Throwable -> Log.e(TAG, "get disk space failed: $error") }
-                )
-        }
-
         var enableSdkModelLedAnimation = false
         var enablePpiModeLedAnimation = false
         changeSdkModeLedAnimationStatusButton.setOnClickListener {
-            api.setLedConfig(deviceId, LedConfig(
-                sdkModeLedEnabled = enableSdkModelLedAnimation,
-                ppiModeLedEnabled = !enablePpiModeLedAnimation))
+            api.setLedConfig(
+                deviceId, LedConfig(
+                    sdkModeLedEnabled = enableSdkModelLedAnimation,
+                    ppiModeLedEnabled = !enablePpiModeLedAnimation
+                )
+            )
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                     {
@@ -883,14 +601,22 @@ class MainActivity : AppCompatActivity() {
                             )
                         enableSdkModelLedAnimation = !enableSdkModelLedAnimation
                     },
-                    { error: Throwable -> Log.e(TAG, "changeSdkModeLedAnimationStatus failed: $error") }
+                    { error: Throwable ->
+                        Log.e(
+                            TAG,
+                            "changeSdkModeLedAnimationStatus failed: $error"
+                        )
+                    }
                 )
         }
 
         changePpiModeLedAnimationStatusButton.setOnClickListener {
-            api.setLedConfig(deviceId, LedConfig(
-                sdkModeLedEnabled = !enableSdkModelLedAnimation,
-                ppiModeLedEnabled = enablePpiModeLedAnimation))
+            api.setLedConfig(
+                deviceId, LedConfig(
+                    sdkModeLedEnabled = !enableSdkModelLedAnimation,
+                    ppiModeLedEnabled = enablePpiModeLedAnimation
+                )
+            )
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                     {
@@ -902,7 +628,12 @@ class MainActivity : AppCompatActivity() {
                             )
                         enablePpiModeLedAnimation = !enablePpiModeLedAnimation
                     },
-                    { error: Throwable -> Log.e(TAG, "changePpiModeLedAnimationStatus failed: $error") }
+                    { error: Throwable ->
+                        Log.e(
+                            TAG,
+                            "changePpiModeLedAnimationStatus failed: $error"
+                        )
+                    }
                 )
         }
 
@@ -920,28 +651,41 @@ class MainActivity : AppCompatActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT), PERMISSION_REQUEST_CODE)
+                requestPermissions(
+                    arrayOf(
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ), PERMISSION_REQUEST_CODE
+                )
             } else {
-                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), PERMISSION_REQUEST_CODE)
+                requestPermissions(
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                    PERMISSION_REQUEST_CODE
+                )
             }
         } else {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_CODE)
+            requestPermissions(
+                arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION),
+                PERMISSION_REQUEST_CODE
+            )
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
             for (index in 0..grantResults.lastIndex) {
                 if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
-                    disableAllButtons()
                     Log.w(TAG, "No sufficient permissions")
                     showToast("No sufficient permissions")
                     return
                 }
             }
             Log.d(TAG, "Needed permissions are granted")
-            enableAllButtons()
         }
     }
 
@@ -988,110 +732,9 @@ class MainActivity : AppCompatActivity() {
         button.background = buttonDrawable
     }
 
-    private fun requestStreamSettings(identifier: String, feature: PolarBleApi.PolarDeviceDataType): Flowable<PolarSensorSetting> {
-        val availableSettings = api.requestStreamSettings(identifier, feature)
-        val allSettings = api.requestFullStreamSettings(identifier, feature)
-            .onErrorReturn { error: Throwable ->
-                Log.w(TAG, "Full stream settings are not available for feature $feature. REASON: $error")
-                PolarSensorSetting(emptyMap())
-            }
-        return Single.zip(availableSettings, allSettings) { available: PolarSensorSetting, all: PolarSensorSetting ->
-            if (available.settings.isEmpty()) {
-                throw Throwable("Settings are not available")
-            } else {
-                Log.d(TAG, "Feature " + feature + " available settings " + available.settings)
-                Log.d(TAG, "Feature " + feature + " all settings " + all.settings)
-                return@zip android.util.Pair(available, all)
-            }
-        }
-            .observeOn(AndroidSchedulers.mainThread())
-            .toFlowable()
-            .flatMap { sensorSettings: android.util.Pair<PolarSensorSetting, PolarSensorSetting> ->
-                DialogUtility.showAllSettingsDialog(
-                    this@MainActivity,
-                    sensorSettings.first.settings,
-                    sensorSettings.second.settings
-                ).toFlowable()
-            }
-    }
-
     private fun showToast(message: String) {
         val toast = Toast.makeText(applicationContext, message, Toast.LENGTH_LONG)
         toast.show()
-    }
-
-    private fun showSnackbar(message: String) {
-        val contextView = findViewById<View>(R.id.buttons_container)
-        Snackbar.make(contextView, message, Snackbar.LENGTH_LONG)
-            .show()
-    }
-
-    private fun showDialog(title: String, message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(message)
-            .setPositiveButton("OK") { _, _ ->
-                // Respond to positive button press
-            }
-            .show()
-    }
-
-    private fun disableAllButtons() {
-        broadcastButton.isEnabled = false
-        connectButton.isEnabled = false
-        autoConnectButton.isEnabled = false
-        scanButton.isEnabled = false
-        ecgButton.isEnabled = false
-        accButton.isEnabled = false
-        gyrButton.isEnabled = false
-        magButton.isEnabled = false
-        ppgButton.isEnabled = false
-        ppiButton.isEnabled = false
-        listExercisesButton.isEnabled = false
-        fetchExerciseButton.isEnabled = false
-        removeExerciseButton.isEnabled = false
-        startH10RecordingButton.isEnabled = false
-        stopH10RecordingButton.isEnabled = false
-        readH10RecordingStatusButton.isEnabled = false
-        setTimeButton.isEnabled = false
-        getTimeButton.isEnabled = false
-        toggleSdkModeButton.isEnabled = false
-        getDiskSpaceButton.isEnabled = false
-        //Verity Sense recording buttons
-        listRecordingsButton.isEnabled = false
-        startRecordingButton.isEnabled = false
-        stopRecordingButton.isEnabled = false
-        downloadRecordingButton.isEnabled = false
-        deleteRecordingButton.isEnabled = false
-    }
-
-    private fun enableAllButtons() {
-        broadcastButton.isEnabled = true
-        connectButton.isEnabled = true
-        autoConnectButton.isEnabled = true
-        scanButton.isEnabled = true
-        ecgButton.isEnabled = true
-        accButton.isEnabled = true
-        gyrButton.isEnabled = true
-        magButton.isEnabled = true
-        ppgButton.isEnabled = true
-        ppiButton.isEnabled = true
-        listExercisesButton.isEnabled = true
-        fetchExerciseButton.isEnabled = true
-        removeExerciseButton.isEnabled = true
-        startH10RecordingButton.isEnabled = true
-        stopH10RecordingButton.isEnabled = true
-        readH10RecordingStatusButton.isEnabled = true
-        setTimeButton.isEnabled = true
-        getTimeButton.isEnabled = true
-        toggleSdkModeButton.isEnabled = true
-        getDiskSpaceButton.isEnabled = true
-        //Verity Sense recording buttons
-        listRecordingsButton.isEnabled = true
-        startRecordingButton.isEnabled = true
-        stopRecordingButton.isEnabled = true
-        downloadRecordingButton.isEnabled = true
-        deleteRecordingButton.isEnabled = true
     }
 
     private fun disposeAllStreams() {
