@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     private var scanDisposable: Disposable? = null
     private var autoConnectDisposable: Disposable? = null
     private var dcDisposable: Disposable? = null //this on is mine
+    private var dcDisposable2Test: Disposable? = null
     private var dcDisposableArray: Array<Disposable?>? = null
     private var hrDisposable: Disposable? = null
     private var ecgDisposable: Disposable? = null
@@ -254,7 +255,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun subscribeToPolarHR(disposableIdx: Int, deviceIDforFunc: String){
         Log.d(TAG, "did it run???")
-        dcDisposableArray?.set(disposableIdx, api.startHrStreaming(deviceIDforFunc)
+        dcDisposable = api.startHrStreaming(deviceIDforFunc)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { hrData: PolarHrData ->
@@ -270,7 +271,7 @@ class MainActivity : AppCompatActivity() {
                     Log.e(TAG, "HR stream failed. Reason $error")
                 },
                 { Log.d(TAG, "HR stream complete") }
-            ))
+            )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -437,7 +438,7 @@ class MainActivity : AppCompatActivity() {
             if (isDisposed) {
                 toggleButtonDown(dataCollectButton, "Stop Collecting Data")
 
-                //LOG HEART RATE DATA
+                //LOG HEART RATE DATA sean
                 dcDisposable = api.startHrStreaming(deviceId)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
@@ -456,6 +457,26 @@ class MainActivity : AppCompatActivity() {
                         { Log.d(TAG, "HR stream complete") }
                     )
 
+               /* //LOG HEART RATE DATA sean/*
+                dcDisposable2Test = api.startHrStreaming(deviceId2)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                        { hrData: PolarHrData ->
+                            for (sample in hrData.samples) {
+                                Log.d(
+                                    TAG,
+                                    "HR     bpm second: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+                                )
+                            }
+                        },
+                        { error: Throwable ->
+                            toggleButtonUp(dataCollectButton, "Data stream failed")
+                            Log.e(TAG, "HR stream failed. Reason $error")
+                        },
+                        { Log.d(TAG, "HR stream complete") }
+                    )*/
+
+                */
                 subscribeToPolarHR(1,deviceId2)
 
                 //LOG ACCELEROMETER DATA
