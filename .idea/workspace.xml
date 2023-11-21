@@ -10,6 +10,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="880a8723-5a76-4eaf-b266-2c772034db9c" name="Changes" comment="">
+<<<<<<< HEAD
+=======
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
       <change beforePath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/examples/example-android/androidBleSdkTestApp/app/src/main/java/com/polar/androidblesdk/MainActivity.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -45,7 +49,10 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+<<<<<<< HEAD
     <option name="RESET_MODE" value="MIXED" />
+=======
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
@@ -173,6 +180,7 @@
     </task>
     <servers />
   </component>
+<<<<<<< HEAD
   <component name="Vcs.Log.Tabs.Properties">
     <option name="TAB_STATES">
       <map>
@@ -184,4 +192,6 @@
       </map>
     </option>
   </component>
+=======
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
 </project>

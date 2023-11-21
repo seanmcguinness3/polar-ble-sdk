@@ -3,7 +3,10 @@ package com.polar.androidblesdk
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+<<<<<<< HEAD
 import android.bluetooth.BluetoothDevice
+=======
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
@@ -59,7 +62,10 @@ class MainActivity : AppCompatActivity() {
 
     // ATTENTION! Replace with the device ID from your device.
     private var deviceId = "C19E1A21"
+<<<<<<< HEAD
     private var deviceId2 = "C929ED29"
+=======
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
 
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
@@ -82,8 +88,11 @@ class MainActivity : AppCompatActivity() {
     private var scanDisposable: Disposable? = null
     private var autoConnectDisposable: Disposable? = null
     private var dcDisposable: Disposable? = null //this on is mine
+<<<<<<< HEAD
     private var dcDisposable2Test: Disposable? = null
     private var dcDisposableArray: Array<Disposable?>? = null
+=======
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
     private var hrDisposable: Disposable? = null
     private var ecgDisposable: Disposable? = null
     private var accDisposable: Disposable? = null
@@ -122,6 +131,139 @@ class MainActivity : AppCompatActivity() {
     private lateinit var deleteRecordingButton: Button
     private val entryCache: MutableMap<String, MutableList<PolarOfflineRecordingEntry>> =
         mutableMapOf()
+<<<<<<< HEAD
+=======
+
+
+    private val scanFilter = ScanFilter.Builder()
+        .setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID)))
+        .build()
+
+    private val bluetoothAdapter: BluetoothAdapter by lazy {
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter
+    }
+
+    private val bleScanner by lazy {
+        bluetoothAdapter.bluetoothLeScanner
+    }
+
+    private var connectedGatt: BluetoothGatt? = null
+    private var characteristicForRead: BluetoothGattCharacteristic? = null
+    private var characteristicForWrite: BluetoothGattCharacteristic? = null
+    private var characteristicForNotify: BluetoothGattCharacteristic? = null
+
+    @SuppressLint("MissingPermission")
+    @RequiresApi(Build.VERSION_CODES.M)
+    private val scanSettings = ScanSettings.Builder()
+        .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+        .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH)
+        .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+        .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)
+        .setReportDelay(0)
+        .build()
+
+    @SuppressLint("MissingPermission")
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            val deviceAddress = gatt.device.address
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (newState == BluetoothGatt.STATE_CONNECTED) {
+                    Log.d(TAG, "connected to $deviceAddress")
+
+                    Handler(Looper.getMainLooper()).post {
+                        gatt.discoverServices() //this might cause an error b/c i'm not posting the lifecycle state
+                        //maybe add in the lifecycle state later
+                    }
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    Log.d(TAG, "disconnected from $deviceAddress")
+                    //setConnectGattToNull() may or may not need this
+                    gatt.close()
+                }
+            } else {
+                gatt.close()
+            }
+        }
+
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            Log.d(TAG, "onServicesDiscovered services.count=${gatt.services.size} status=$status")
+
+            if (status == 129) {
+                Log.d(TAG, "ERROR 129")
+                gatt.disconnect()
+                return
+            }
+
+            val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID)) ?: run {
+                Log.d(TAG, "error: service not fount: $HR_SERVICE_UUID")
+                gatt.disconnect()
+                return
+            }
+
+            connectedGatt = gatt
+            characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
+            characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
+            characteristicForNotify =
+                service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
+
+            characteristicForNotify?.let {
+                subscribeToNotifications(it, gatt)
+            } ?: run {
+                Log.d(TAG, "notify characteristic not found $CHAR_FOR_NOTIFY_UUID")
+            }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            val strValue = characteristic.value.toString(Charsets.UTF_8)
+            val strValueChar = strValue.toCharArray()
+            val strValueLog = strValueChar[1].toInt()
+            Log.d(TAG, "HeartBeat = \"$strValueLog\"")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private val scanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val name: String? = result.scanRecord?.deviceName ?: result.device.name
+            safeStopBleScan()
+            result.device.connectGatt(this@MainActivity, false, gattCallback)
+        }
+
+        override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+            Log.d(TAG, "onBatchScanResults, Ignoring")
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            Log.d(TAG, "onScanFailed errorCode=$errorCode")
+            safeStopBleScan()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeStopBleScan() {
+        bleScanner.stopScan(scanCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun subscribeToNotifications(
+        characteristic: BluetoothGattCharacteristic,
+        gatt: BluetoothGatt
+    ) {
+        val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
+        characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
+            if (!gatt.setCharacteristicNotification(characteristic, true)) {
+                Log.d(TAG, "ERROR: setNotification(true) failed for ${characteristic.uuid}")
+                return
+            }
+            cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(cccDescriptor)
+        }
+    }
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
 
 
     private val scanFilter = ScanFilter.Builder()
@@ -408,6 +550,7 @@ class MainActivity : AppCompatActivity() {
                     api.disconnectFromDevice(deviceId)
                     api.disconnectFromDevice(deviceId2)
                 } else {
+
                     api.connectToDevice(deviceId)
                     api.connectToDevice(deviceId2)
                 }
@@ -422,7 +565,10 @@ class MainActivity : AppCompatActivity() {
         }
         //SEAN THIS IS WHERE TO CONNECT TO NON-POLAR DEVICE
         connectNpButton.setOnClickListener {
+<<<<<<< HEAD
             //APPARANTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
+=======
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
             bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
         }
 
@@ -470,7 +616,11 @@ class MainActivity : AppCompatActivity() {
             if (isDisposed) {
                 toggleButtonDown(dataCollectButton, "Stop Collecting Data")
 
+<<<<<<< HEAD
                 /*//LOG HEART RATE DATA sean
+=======
+                //LOG HEART RATE DATA
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
                 dcDisposable = api.startHrStreaming(deviceId)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
@@ -489,6 +639,7 @@ class MainActivity : AppCompatActivity() {
                         { Log.d(TAG, "HR stream complete") }
                     )
 
+<<<<<<< HEAD
                 //LOG HEART RATE DATA sean/*
                 dcDisposable2Test = api.startHrStreaming(deviceId2)
                     .observeOn(AndroidSchedulers.mainThread())
@@ -498,10 +649,29 @@ class MainActivity : AppCompatActivity() {
                                 Log.d(
                                     TAG,
                                     "HR     bpm second: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+=======
+                //LOG ACCELEROMETER DATA
+                val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
+                accSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+                accSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+                accSettingsMap[PolarSensorSetting.SettingType.RANGE] = 8
+                accSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+                val accSettings = PolarSensorSetting(accSettingsMap)
+                accDisposable = api.startAccStreaming(deviceId, accSettings)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                        { accData: PolarAccelerometerData ->
+                            for (data in accData.samples) {
+                                Log.d(
+                                    TAG,
+                                    "ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
                                 )
                             }
                         },
                         { error: Throwable ->
+<<<<<<< HEAD
                             toggleButtonUp(dataCollectButton, "Data stream failed")
                             Log.e(TAG, "HR stream failed. Reason $error")
                         },
@@ -537,6 +707,13 @@ class MainActivity : AppCompatActivity() {
                         { Log.d(TAG, "acc stream complete") }
                     )
 
+=======
+                            Log.e(TAG, "Acc stream failed because $error")
+                        },
+                        { Log.d(TAG, "acc stream complete") }
+                    )
+
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
                 //LOG GYROMETER DATA
                 val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
                     EnumMap(PolarSensorSetting.SettingType::class.java)
@@ -812,11 +989,106 @@ class MainActivity : AppCompatActivity() {
         button.background = buttonDrawable
     }
 
+<<<<<<< HEAD
+=======
+    //SEAN
+    private fun hardSetStreamSettings(
+        identifier: String,
+        feature: PolarBleApi.PolarDeviceDataType
+    ): Flowable<PolarSensorSetting> {
+        val availableSettings = api.requestStreamSettings(identifier, feature)
+        val allSettings = api.requestFullStreamSettings(identifier, feature)
+            .onErrorReturn { error: Throwable ->
+                Log.w(
+                    TAG,
+                    "Full stream settings are not available for feature $feature. REASON: $error"
+                )
+                PolarSensorSetting(emptyMap())
+            }
+        return Single.zip(
+            availableSettings,
+            allSettings
+        ) { available: PolarSensorSetting, all: PolarSensorSetting ->
+            if (available.settings.isEmpty()) {
+                throw Throwable("Settings are not available")
+            } else {
+                Log.d(TAG, "Feature " + feature + " available settings " + available.settings)
+                Log.d(TAG, "Feature " + feature + " all settings " + all.settings)
+                return@zip android.util.Pair(available, all)
+            }
+        }
+            .observeOn(AndroidSchedulers.mainThread())
+            .toFlowable()
+            .flatMap { sensorSettings: android.util.Pair<PolarSensorSetting, PolarSensorSetting> ->
+                DialogUtility.showAllSettingsDialog(
+                    this@MainActivity,
+                    sensorSettings.first.settings,
+                    sensorSettings.second.settings
+                ).toFlowable()
+            }
+    }
+
+    private fun requestStreamSettings(
+        identifier: String,
+        feature: PolarBleApi.PolarDeviceDataType
+    ): Flowable<PolarSensorSetting> {
+        val availableSettings = api.requestStreamSettings(identifier, feature)
+        val allSettings = api.requestFullStreamSettings(identifier, feature)
+            .onErrorReturn { error: Throwable ->
+                Log.w(
+                    TAG,
+                    "Full stream settings are not available for feature $feature. REASON: $error"
+                )
+                PolarSensorSetting(emptyMap())
+            }
+        return Single.zip(
+            availableSettings,
+            allSettings
+        ) { available: PolarSensorSetting, all: PolarSensorSetting ->
+            if (available.settings.isEmpty()) {
+                throw Throwable("Settings are not available")
+            } else {
+                Log.d(TAG, "Feature " + feature + " available settings " + available.settings)
+                Log.d(TAG, "Feature " + feature + " all settings " + all.settings)
+                return@zip android.util.Pair(available, all)
+            }
+        }
+            .observeOn(AndroidSchedulers.mainThread())
+            .toFlowable()
+            .flatMap { sensorSettings: android.util.Pair<PolarSensorSetting, PolarSensorSetting> ->
+                DialogUtility.showAllSettingsDialog(
+                    this@MainActivity,
+                    sensorSettings.first.settings,
+                    sensorSettings.second.settings
+                ).toFlowable()
+            }
+    }
+
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
     private fun showToast(message: String) {
         val toast = Toast.makeText(applicationContext, message, Toast.LENGTH_LONG)
         toast.show()
     }
 
+<<<<<<< HEAD
+=======
+    private fun showSnackbar(message: String) {
+        val contextView = findViewById<View>(R.id.buttons_container)
+        Snackbar.make(contextView, message, Snackbar.LENGTH_LONG)
+            .show()
+    }
+
+    private fun showDialog(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("OK") { _, _ ->
+                // Respond to positive button press
+            }
+            .show()
+    }
+
+>>>>>>> 3661502c4bc42fc46675d950ffe1bbdd6d06e039
     private fun disposeAllStreams() {
         ecgDisposable?.dispose()
         accDisposable?.dispose()
