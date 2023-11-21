@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanFilter
@@ -44,8 +46,9 @@ import java.util.*
 private const val HR_SERVICE_UUID = "0000180D-0000-1000-8000-00805F9B34FB"
 private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB"
 private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF"
-private const val CHAR_FOR_INDICATE_UUID = "00002A37-0000-1000-8000-00805F9B34FB"
+private const val CHAR_FOR_NOTIFY_UUID = "00002A37-0000-1000-8000-00805F9B34FB"
 private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
+
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
@@ -117,19 +120,23 @@ class MainActivity : AppCompatActivity() {
         mutableMapOf()
 
 
-
     private val scanFilter = ScanFilter.Builder()
         .setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID)))
         .build()
 
-    private val bluetoothAdapter: BluetoothAdapter by lazy{
+    private val bluetoothAdapter: BluetoothAdapter by lazy {
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothManager.adapter
     }
 
-    private val bleScanner by lazy{
+    private val bleScanner by lazy {
         bluetoothAdapter.bluetoothLeScanner
     }
+
+    private var connectedGatt: BluetoothGatt? = null
+    private var characteristicForRead: BluetoothGattCharacteristic? = null
+    private var characteristicForWrite: BluetoothGattCharacteristic? = null
+    private var characteristicForNotify: BluetoothGattCharacteristic? = null
 
     @SuppressLint("MissingPermission")
     @RequiresApi(Build.VERSION_CODES.M)
@@ -150,11 +157,11 @@ class MainActivity : AppCompatActivity() {
                 if (newState == BluetoothGatt.STATE_CONNECTED) {
                     Log.d(TAG, "connected to $deviceAddress")
 
-                    Handler(Looper.getMainLooper()).post{
+                    Handler(Looper.getMainLooper()).post {
                         gatt.discoverServices() //this might cause an error b/c i'm not posting the lifecycle state
                         //maybe add in the lifecycle state later
                     }
-                }else if (newState == BluetoothProfile.STATE_DISCONNECTED){
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     Log.d(TAG, "disconnected from $deviceAddress")
                     //setConnectGattToNull() may or may not need this
                     gatt.close()
@@ -167,14 +174,14 @@ class MainActivity : AppCompatActivity() {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             Log.d(TAG, "onServicesDiscovered services.count=${gatt.services.size} status=$status")
 
-            if (status == 129){
+            if (status == 129) {
                 Log.d(TAG, "ERROR 129")
                 gatt.disconnect()
                 return
             }
 
             val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID)) ?: run {
-                Log.d(TAG,"error: service not fount: $HR_SERVICE_UUID")
+                Log.d(TAG, "error: service not fount: $HR_SERVICE_UUID")
                 gatt.disconnect()
                 return
             }
@@ -182,20 +189,37 @@ class MainActivity : AppCompatActivity() {
             connectedGatt = gatt
             characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
             characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
-            characteristicForIndicate = service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
+            characteristicForNotify =
+                service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
+
+            characteristicForNotify?.let {
+                subscribeToNotifications(it, gatt)
+            } ?: run {
+                Log.d(TAG, "notify characteristic not found $CHAR_FOR_NOTIFY_UUID")
+            }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            val strValue = characteristic.value.toString(Charsets.UTF_8)
+            val strValueChar = strValue.toCharArray()
+            val strValueLog = strValueChar[1].toInt()
+            Log.d(TAG, "HeartBeat = \"$strValueLog\"")
         }
     }
 
     @SuppressLint("MissingPermission")
-    private val scanCallback = object : ScanCallback(){
+    private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val name: String? = result.scanRecord?.deviceName ?: result.device.name
             safeStopBleScan()
-            result.device.connectGatt(this@MainActivity,false,gattCallback)
+            result.device.connectGatt(this@MainActivity, false, gattCallback)
         }
 
         override fun onBatchScanResults(results: MutableList<ScanResult>?) {
-            Log.d(TAG,"onBatchScanResults, Ignoring")
+            Log.d(TAG, "onBatchScanResults, Ignoring")
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -205,10 +229,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun safeStopBleScan(){
+    private fun safeStopBleScan() {
         bleScanner.stopScan(scanCallback)
     }
 
+    @SuppressLint("MissingPermission")
+    private fun subscribeToNotifications(
+        characteristic: BluetoothGattCharacteristic,
+        gatt: BluetoothGatt
+    ) {
+        val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
+        characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
+            if (!gatt.setCharacteristicNotification(characteristic, true)) {
+                Log.d(TAG, "ERROR: setNotification(true) failed for ${characteristic.uuid}")
+                return
+            }
+            cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(cccDescriptor)
+        }
+    }
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -325,7 +364,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         //SEAN THIS IS WHERE TO CONNECT TO NON-POLAR DEVICE
-        connectNpButton.setOnClickListener{
+        connectNpButton.setOnClickListener {
             bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
         }
 
@@ -393,7 +432,8 @@ class MainActivity : AppCompatActivity() {
                     )
 
                 //LOG ACCELEROMETER DATA
-                val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> = EnumMap(PolarSensorSetting.SettingType::class.java)
+                val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
                 accSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
                 accSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
                 accSettingsMap[PolarSensorSetting.SettingType.RANGE] = 8
@@ -417,13 +457,14 @@ class MainActivity : AppCompatActivity() {
                     )
 
                 //LOG GYROMETER DATA
-                val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> = EnumMap(PolarSensorSetting.SettingType::class.java)
+                val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
                 gyrSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
                 gyrSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
                 gyrSettingsMap[PolarSensorSetting.SettingType.RANGE] = 2000
                 gyrSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
                 val gyrSettings = PolarSensorSetting(gyrSettingsMap)
-                gyrDisposable = api.startGyroStreaming(deviceId,gyrSettings)
+                gyrDisposable = api.startGyroStreaming(deviceId, gyrSettings)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
                         { gyrData: PolarGyroData ->
@@ -441,13 +482,14 @@ class MainActivity : AppCompatActivity() {
                     )
 
                 //LOG MAGNOTOMETER DATA
-                val magSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> = EnumMap(PolarSensorSetting.SettingType::class.java)
+                val magSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
                 magSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 20
                 magSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
                 magSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
                 magSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
                 val magSettings = PolarSensorSetting(magSettingsMap)
-                magDisposable = api.startMagnetometerStreaming(deviceId,magSettings)
+                magDisposable = api.startMagnetometerStreaming(deviceId, magSettings)
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
                         { polarMagData: PolarMagnetometerData ->
@@ -465,13 +507,14 @@ class MainActivity : AppCompatActivity() {
                     )
 
                 //LOG PPG DATA
-                val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> = EnumMap(PolarSensorSetting.SettingType::class.java)
+                val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+                    EnumMap(PolarSensorSetting.SettingType::class.java)
                 ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135
                 ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
                 //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
                 ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
                 val ppgSettings = PolarSensorSetting(ppgSettingsMap)
-                ppgDisposable = api.startPpgStreaming(deviceId,ppgSettings)
+                ppgDisposable = api.startPpgStreaming(deviceId, ppgSettings)
                     .subscribe(
                         { polarPpgData: PolarPpgData ->
                             if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
