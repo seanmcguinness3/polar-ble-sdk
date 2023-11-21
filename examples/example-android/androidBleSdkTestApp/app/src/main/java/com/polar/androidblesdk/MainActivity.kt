@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
 
     // ATTENTION! Replace with the device ID from your device.
     private var deviceId = "C19E1A21"
+    private var deviceId2 = "C929ED29"
 
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
@@ -80,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     private var scanDisposable: Disposable? = null
     private var autoConnectDisposable: Disposable? = null
     private var dcDisposable: Disposable? = null //this on is mine
+    private var dcDisposableArray: Array<Disposable?>? = null
     private var hrDisposable: Disposable? = null
     private var ecgDisposable: Disposable? = null
     private var accDisposable: Disposable? = null
@@ -250,6 +252,27 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    private fun subscribeToPolarHR(disposableIdx: Int, deviceIDforFunc: String){
+        Log.d(TAG, "did it run???")
+        dcDisposableArray?.set(disposableIdx, api.startHrStreaming(deviceIDforFunc)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                { hrData: PolarHrData ->
+                    for (sample in hrData.samples) {
+                        Log.d(
+                            TAG,
+                            "ass face HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+                        )
+                    }
+                },
+                { error: Throwable ->
+                    toggleButtonUp(dataCollectButton, "Data stream failed")
+                    Log.e(TAG, "HR stream failed. Reason $error")
+                },
+                { Log.d(TAG, "HR stream complete") }
+            ))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -350,9 +373,10 @@ class MainActivity : AppCompatActivity() {
             try {
                 if (deviceConnected) {
                     api.disconnectFromDevice(deviceId)
+                    api.disconnectFromDevice(deviceId2)
                 } else {
-
                     api.connectToDevice(deviceId)
+                    api.connectToDevice(deviceId2)
                 }
             } catch (polarInvalidArgument: PolarInvalidArgument) {
                 val attempt = if (deviceConnected) {
@@ -431,6 +455,8 @@ class MainActivity : AppCompatActivity() {
                         },
                         { Log.d(TAG, "HR stream complete") }
                     )
+
+                subscribeToPolarHR(1,deviceId2)
 
                 //LOG ACCELEROMETER DATA
                 val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
