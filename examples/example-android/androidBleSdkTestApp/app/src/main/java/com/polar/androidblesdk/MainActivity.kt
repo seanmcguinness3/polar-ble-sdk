@@ -1,13 +1,28 @@
 package com.polar.androidblesdk
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanSettings
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanCallback
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.ParcelUuid
 import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -26,6 +41,11 @@ import io.reactivex.rxjava3.core.Single
 import io.reactivex.rxjava3.disposables.Disposable
 import java.util.*
 
+private const val HR_SERVICE_UUID = "0000180D-0000-1000-8000-00805F9B34FB"
+private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB"
+private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF"
+private const val CHAR_FOR_INDICATE_UUID = "00002A37-0000-1000-8000-00805F9B34FB"
+private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
@@ -80,6 +100,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connectButton: Button
     private lateinit var autoConnectButton: Button
     private lateinit var scanButton: Button
+    private lateinit var connectNpButton: Button
     private lateinit var dataCollectButton: Button
     private lateinit var toggleSdkModeButton: Button
     private lateinit var changeSdkModeLedAnimationStatusButton: Button
@@ -96,6 +117,100 @@ class MainActivity : AppCompatActivity() {
         mutableMapOf()
 
 
+
+    private val scanFilter = ScanFilter.Builder()
+        .setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID)))
+        .build()
+
+    private val bluetoothAdapter: BluetoothAdapter by lazy{
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter
+    }
+
+    private val bleScanner by lazy{
+        bluetoothAdapter.bluetoothLeScanner
+    }
+
+    @SuppressLint("MissingPermission")
+    @RequiresApi(Build.VERSION_CODES.M)
+    private val scanSettings = ScanSettings.Builder()
+        .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+        .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH)
+        .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+        .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)
+        .setReportDelay(0)
+        .build()
+
+    @SuppressLint("MissingPermission")
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            val deviceAddress = gatt.device.address
+
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (newState == BluetoothGatt.STATE_CONNECTED) {
+                    Log.d(TAG, "connected to $deviceAddress")
+
+                    Handler(Looper.getMainLooper()).post{
+                        gatt.discoverServices() //this might cause an error b/c i'm not posting the lifecycle state
+                        //maybe add in the lifecycle state later
+                    }
+                }else if (newState == BluetoothProfile.STATE_DISCONNECTED){
+                    Log.d(TAG, "disconnected from $deviceAddress")
+                    //setConnectGattToNull() may or may not need this
+                    gatt.close()
+                }
+            } else {
+                gatt.close()
+            }
+        }
+
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            Log.d(TAG, "onServicesDiscovered services.count=${gatt.services.size} status=$status")
+
+            if (status == 129){
+                Log.d(TAG, "ERROR 129")
+                gatt.disconnect()
+                return
+            }
+
+            val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID)) ?: run {
+                Log.d(TAG,"error: service not fount: $HR_SERVICE_UUID")
+                gatt.disconnect()
+                return
+            }
+
+            connectedGatt = gatt
+            characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
+            characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
+            characteristicForIndicate = service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private val scanCallback = object : ScanCallback(){
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val name: String? = result.scanRecord?.deviceName ?: result.device.name
+            safeStopBleScan()
+            result.device.connectGatt(this@MainActivity,false,gattCallback)
+        }
+
+        override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+            Log.d(TAG,"onBatchScanResults, Ignoring")
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            Log.d(TAG, "onScanFailed errorCode=$errorCode")
+            safeStopBleScan()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeStopBleScan(){
+        bleScanner.stopScan(scanCallback)
+    }
+
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -104,6 +219,7 @@ class MainActivity : AppCompatActivity() {
         connectButton = findViewById(R.id.connect_button)
         autoConnectButton = findViewById(R.id.auto_connect_button)
         scanButton = findViewById(R.id.scan_button)
+        connectNpButton = findViewById(R.id.connect_np_button)
         dataCollectButton = findViewById(R.id.data_collect_button)
         toggleSdkModeButton = findViewById(R.id.toggle_SDK_mode)
         changeSdkModeLedAnimationStatusButton =
@@ -196,6 +312,7 @@ class MainActivity : AppCompatActivity() {
                 if (deviceConnected) {
                     api.disconnectFromDevice(deviceId)
                 } else {
+
                     api.connectToDevice(deviceId)
                 }
             } catch (polarInvalidArgument: PolarInvalidArgument) {
@@ -206,6 +323,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 Log.e(TAG, "Failed to $attempt. Reason $polarInvalidArgument ")
             }
+        }
+        //SEAN THIS IS WHERE TO CONNECT TO NON-POLAR DEVICE
+        connectNpButton.setOnClickListener{
+            bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
         }
 
         autoConnectButton.setOnClickListener {

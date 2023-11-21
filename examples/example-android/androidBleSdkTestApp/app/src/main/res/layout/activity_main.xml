@@ -44,6 +44,12 @@
             android:layout_height="wrap_content"
             android:text="@string/scan_devices" />
 
+        <Button
+            android:id="@+id/connect_np_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="connect to nonpolar device" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
