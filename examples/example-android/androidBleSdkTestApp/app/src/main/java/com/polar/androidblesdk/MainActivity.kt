@@ -34,6 +34,7 @@ import androidx.core.util.Pair
 import com.google.android.material.snackbar.Snackbar
 import com.polar.androidblesdk.util.FileExporter
 import com.polar.androidblesdk.util.generateNewFile
+import com.polar.androidblesdk.util.getSaveFolder
 import com.polar.sdk.api.PolarBleApi
 import com.polar.sdk.api.PolarBleApiCallback
 import com.polar.sdk.api.PolarBleApiDefaultImpl
@@ -97,6 +98,11 @@ class MainActivity : AppCompatActivity() {
     private var ppiDisposable: Disposable? = null
     private var sdkModeEnableDisposable: Disposable? = null
     private lateinit var hRFileName: File
+    private lateinit var aCCFileName: File
+    private lateinit var gYRFileName: File
+    private lateinit var mAGFileName: File
+    private lateinit var pPGFileName: File
+
 
     private var sdkModeEnabledStatus = false
     private var deviceConnected = false
@@ -260,7 +266,8 @@ class MainActivity : AppCompatActivity() {
                         val logString =
                             "$deviceIDforFunc  HR   bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
                         Log.d(TAG, logString)
-                        hRFileName.appendText(logString)
+                        val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-HRData.txt")
+                        file.appendText(logString)
                     }
                 }, { error: Throwable ->
                     toggleButtonUp(dataCollectButton, "Data stream failed")
@@ -280,10 +287,10 @@ class MainActivity : AppCompatActivity() {
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe({ accData: PolarAccelerometerData ->
                 for (data in accData.samples) {
-                    Log.d(
-                        TAG,
-                        "$deviceIDforFunc ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                    )
+                    val logString = "$deviceIDforFunc ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                    val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-ACCData.txt")
+                    file.appendText(logString)
+                    Log.d(TAG, logString)
                 }
             }, { error: Throwable ->
                 Log.e(TAG, "Acc stream failed because $error")
@@ -299,13 +306,13 @@ class MainActivity : AppCompatActivity() {
         gyrSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
         val gyrSettings = PolarSensorSetting(gyrSettingsMap)
         gyrDisposable =
-            api.startGyroStreaming(deviceId, gyrSettings).observeOn(AndroidSchedulers.mainThread())
+            api.startGyroStreaming(deviceIDforFunc, gyrSettings).observeOn(AndroidSchedulers.mainThread())
                 .subscribe({ gyrData: PolarGyroData ->
                     for (data in gyrData.samples) {
-                        Log.d(
-                            TAG,
-                            "$deviceIDforFunc GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                        )
+                        val logString = "$deviceIDforFunc GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                        Log.d(TAG, logString)
+                        val file = File("${getSaveFolder().absolutePath}/$deviceId-GYRData.txt")
+                        file.appendText(logString)
                     }
                 }, { error: Throwable ->
                     Log.e(TAG, "GYR stream failed. Reason $error")
@@ -320,14 +327,14 @@ class MainActivity : AppCompatActivity() {
         magSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
         magSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
         val magSettings = PolarSensorSetting(magSettingsMap)
-        magDisposable = api.startMagnetometerStreaming(deviceId, magSettings)
+        magDisposable = api.startMagnetometerStreaming(deviceIDforFunc, magSettings)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe({ polarMagData: PolarMagnetometerData ->
                 for (data in polarMagData.samples) {
-                    Log.d(
-                        TAG,
-                        "$deviceIDforFunc MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                    )
+                    val logString = "$deviceIDforFunc MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                    Log.d(TAG,logString)
+                    val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-MAGData.txt")
+                    file.appendText(logString)
                 }
             }, { error: Throwable ->
                 Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
@@ -337,21 +344,20 @@ class MainActivity : AppCompatActivity() {
     private fun subscribeToPolarPPG(deviceIDforFunc: String) {
         val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
             EnumMap(PolarSensorSetting.SettingType::class.java)
-        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] =
-            135 //if you find the right sample rate put it here
+        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135 //if you find the right sample rate put it here
         //when you have to dial in the sample rates you'll probably have to re-clone the original build
         ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
         //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
         ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
         val ppgSettings = PolarSensorSetting(ppgSettingsMap)
         ppgDisposable =
-            api.startPpgStreaming(deviceId, ppgSettings).subscribe({ polarPpgData: PolarPpgData ->
+            api.startPpgStreaming(deviceIDforFunc, ppgSettings).subscribe({ polarPpgData: PolarPpgData ->
                     if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
                         for (data in polarPpgData.samples) {
-                            Log.d(
-                                TAG,
-                                "$deviceIDforFunc PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}"
-                            )
+                            val logString = "$deviceIDforFunc PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}"
+                            Log.d(TAG, logString)
+                            val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-PPGData.txt")
+                            file.appendText(logString)
                         }
                     }
                 }, { error: Throwable ->
@@ -520,9 +526,15 @@ class MainActivity : AppCompatActivity() {
                     subscribeToPolarGYR(deviceId)
                     subscribeToPolarMAG(deviceId)
                     subscribeToPolarPPG(deviceId)
+
+                    hRFileName = generateNewFile("$deviceId-HRData.txt")
+                    aCCFileName = generateNewFile("$deviceId-ACCData.txt")
+                    gYRFileName = generateNewFile("$deviceId-GYRData.txt")
+                    mAGFileName = generateNewFile("$deviceId-MAGData.txt")
+                    pPGFileName = generateNewFile("$deviceId-PPGData.txt")
                 }
 
-                hRFileName = generateNewFile()
+
 
             } else {
                 toggleButtonUp(dataCollectButton, "Start Data Collection")
@@ -708,7 +720,6 @@ class MainActivity : AppCompatActivity() {
         accDisposable?.dispose()
         gyrDisposable?.dispose()
         magDisposable?.dispose()
-        ppgDisposable?.dispose()
         ppgDisposable?.dispose()
     }
 }

@@ -14,10 +14,8 @@ fun getSaveFolder(subFolder: String = ""):File{
     resultsFolder.mkdir()
     return resultsFolder
 }
-public fun generateNewFile(): File {
-    val fileName = "ass.txt"
-    //val file = File(fileName)
-    val file = File("${getSaveFolder().absolutePath}/test_$fileName")
+public fun generateNewFile(fileName: String): File {
+    val file = File("${getSaveFolder().absolutePath}/$fileName")
     file.createNewFile()
     return file
 }
