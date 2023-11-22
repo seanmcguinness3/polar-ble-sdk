@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ATTENTION! Replace with the device ID from your device.
+    private var deviceIdArray = arrayOf("C19E1A21", "C929ED29")
     private var deviceId = "C19E1A21"
     private var deviceId2 = "C929ED29"
 
@@ -93,16 +94,10 @@ class MainActivity : AppCompatActivity() {
     private var ppgDisposable: Disposable? = null
     private var ppiDisposable: Disposable? = null
     private var sdkModeEnableDisposable: Disposable? = null
-    private var recordingStartStopDisposable: Disposable? = null
-    private var recordingStatusReadDisposable: Disposable? = null
-    private var listExercisesDisposable: Disposable? = null
-    private var fetchExerciseDisposable: Disposable? = null
-    private var removeExerciseDisposable: Disposable? = null
 
     private var sdkModeEnabledStatus = false
     private var deviceConnected = false
     private var bluetoothEnabled = false
-    private var exerciseEntries: MutableList<PolarExerciseEntry> = mutableListOf()
 
     private lateinit var broadcastButton: Button
     private lateinit var connectButton: Button
@@ -115,16 +110,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var changePpiModeLedAnimationStatusButton: Button
     private lateinit var doFactoryResetButton: Button
 
-    //Verity Sense offline recording use
-    private lateinit var listRecordingsButton: Button
-    private lateinit var startRecordingButton: Button
-    private lateinit var stopRecordingButton: Button
-    private lateinit var downloadRecordingButton: Button
-    private lateinit var deleteRecordingButton: Button
-    private val entryCache: MutableMap<String, MutableList<PolarOfflineRecordingEntry>> =
-        mutableMapOf()
-
-
+    //BEGINNING OF NON POLAR CODE
     private val scanFilter = ScanFilter.Builder()
         .setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID)))
         .build()
@@ -236,9 +222,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
-    var secondTest = false
-
     @SuppressLint("MissingPermission")
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -273,29 +256,18 @@ class MainActivity : AppCompatActivity() {
             safeStopBleScan()
         }
     }
+    //END OF NON POLAR CODE
 
-
-    private fun subscribeToPolarHR(
-        disposableIdx: Int,
-        deviceIDforFunc: String
-    ) {//THIS IS THE METHOD FOR CONNECTING A SECOND POLAR SENSOR.
-        Log.d(TAG, "did it run???")
+    private fun subscribeToPolarHR(deviceIDforFunc: String) {//THIS IS THE METHOD FOR CONNECTING A SECOND POLAR SENSOR.
         var newDisposable: Disposable = api.startHrStreaming(deviceIDforFunc)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { hrData: PolarHrData ->
                     for (sample in hrData.samples) {
-                        if (deviceIDforFunc == deviceId2) {
-                            Log.d(
-                                TAG,
-                                "ass face HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
-                            )
-                        } else {
-                            Log.d(
-                                TAG,
-                                "HR     bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
-                            )
-                        }
+                        Log.d(
+                            TAG,
+                            "$deviceIDforFunc  HR   bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
+                        )
                     }
                 },
                 { error: Throwable ->
@@ -303,6 +275,112 @@ class MainActivity : AppCompatActivity() {
                     Log.e(TAG, "HR stream failed. Reason $error")
                 },
                 { Log.d(TAG, "HR stream complete") }
+            )
+    }
+
+    private fun subscribeToPolarACC(deviceIDforFunc: String) {
+        val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+            EnumMap(PolarSensorSetting.SettingType::class.java)
+        accSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+        accSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+        accSettingsMap[PolarSensorSetting.SettingType.RANGE] = 8
+        accSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+        val accSettings = PolarSensorSetting(accSettingsMap)
+        accDisposable = api.startAccStreaming(deviceIDforFunc, accSettings)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                { accData: PolarAccelerometerData ->
+                    for (data in accData.samples) {
+                        Log.d(
+                            TAG,
+                            "$deviceIDforFunc ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                        )
+                    }
+                },
+                { error: Throwable ->
+                    Log.e(TAG, "Acc stream failed because $error")
+                },
+                { Log.d(TAG, "acc stream complete") }
+            )
+    }
+
+    private fun subscribeToPolarGYR(deviceIDforFunc: String){
+        val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+            EnumMap(PolarSensorSetting.SettingType::class.java)
+        gyrSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+        gyrSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+        gyrSettingsMap[PolarSensorSetting.SettingType.RANGE] = 2000
+        gyrSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+        val gyrSettings = PolarSensorSetting(gyrSettingsMap)
+        gyrDisposable = api.startGyroStreaming(deviceId, gyrSettings)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                { gyrData: PolarGyroData ->
+                    for (data in gyrData.samples) {
+                        Log.d(
+                            TAG,
+                            "$deviceIDforFunc GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                        )
+                    }
+                },
+                { error: Throwable ->
+                    Log.e(TAG, "GYR stream failed. Reason $error")
+                },
+                { Log.d(TAG, "GYR stream complete") }
+            )
+    }
+
+    private fun subscribeToPolarMAG(deviceIDforFunc: String){
+        val magSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+            EnumMap(PolarSensorSetting.SettingType::class.java)
+        magSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 20
+        magSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
+        magSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
+        magSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
+        val magSettings = PolarSensorSetting(magSettingsMap)
+        magDisposable = api.startMagnetometerStreaming(deviceId, magSettings)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(
+                { polarMagData: PolarMagnetometerData ->
+                    for (data in polarMagData.samples) {
+                        Log.d(
+                            TAG,
+                            "$deviceIDforFunc MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                        )
+                    }
+                },
+                { error: Throwable ->
+                    Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
+                },
+                { Log.d(TAG, "MAGNETOMETER stream complete") }
+            )
+    }
+
+    private fun subscribeToPolarPPG(deviceIDforFunc: String){
+        val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
+            EnumMap(PolarSensorSetting.SettingType::class.java)
+        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135 //if you find the right sample rate put it here
+        //when you have to dial in the sample rates you'll probably have to re-clone the original build
+        ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
+        //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
+        ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
+        val ppgSettings = PolarSensorSetting(ppgSettingsMap)
+        ppgDisposable = api.startPpgStreaming(deviceId, ppgSettings)
+            .subscribe(
+                { polarPpgData: PolarPpgData ->
+                    if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
+                        for (data in polarPpgData.samples) {
+                            Log.d(
+                                TAG,
+                                "$deviceIDforFunc PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}"
+                            )
+                        }
+                    }
+                },
+                { error: Throwable ->
+                    Log.e(TAG, "PPG stream failed. Reason $error")
+                },
+                { Log.d(TAG, "PPG stream complete") }
             )
     }
 
@@ -405,12 +483,13 @@ class MainActivity : AppCompatActivity() {
         connectButton.setOnClickListener {
             try {
                 if (deviceConnected) {
-                    api.disconnectFromDevice(deviceId)
-                    api.disconnectFromDevice(deviceId2)
+                    for (deviceId in deviceIdArray){
+                        api.disconnectFromDevice(deviceId)
+                    }
                 } else {
-
-                    api.connectToDevice(deviceId)
-                    api.connectToDevice(deviceId2)
+                    for (deviceId in deviceIdArray){
+                        api.connectToDevice(deviceId)
+                    }
                 }
             } catch (polarInvalidArgument: PolarInvalidArgument) {
                 val attempt = if (deviceConnected) {
@@ -421,7 +500,8 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Failed to $attempt. Reason $polarInvalidArgument ")
             }
         }
-        //SEAN THIS IS WHERE TO CONNECT TO NON-POLAR DEVICE
+
+        //CONNECT TO NON-POLAR DEVICE
         connectNpButton.setOnClickListener {
             //APPARANTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
             bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
@@ -471,108 +551,14 @@ class MainActivity : AppCompatActivity() {
             if (isDisposed) {
                 toggleButtonDown(dataCollectButton, "Stop Collecting Data")
 
-                subscribeToPolarHR(1, deviceId)
-                subscribeToPolarHR(1, deviceId2)
+                for (deviceId in deviceIdArray) {
+                    subscribeToPolarHR(deviceId)
+                    subscribeToPolarACC(deviceId)
+                    subscribeToPolarGYR(deviceId)
+                    subscribeToPolarMAG(deviceId)
+                    subscribeToPolarPPG(deviceId)
+                }
 
-                //LOG ACCELEROMETER DATA
-                val accSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
-                    EnumMap(PolarSensorSetting.SettingType::class.java)
-                accSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
-                accSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
-                accSettingsMap[PolarSensorSetting.SettingType.RANGE] = 8
-                accSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
-                val accSettings = PolarSensorSetting(accSettingsMap)
-                accDisposable = api.startAccStreaming(deviceId, accSettings)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { accData: PolarAccelerometerData ->
-                            for (data in accData.samples) {
-                                Log.d(
-                                    TAG,
-                                    "ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                                )
-                            }
-                        },
-                        { error: Throwable ->
-                            Log.e(TAG, "Acc stream failed because $error")
-                        },
-                        { Log.d(TAG, "acc stream complete") }
-                    )
-                //LOG GYROMETER DATA
-                val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
-                    EnumMap(PolarSensorSetting.SettingType::class.java)
-                gyrSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
-                gyrSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
-                gyrSettingsMap[PolarSensorSetting.SettingType.RANGE] = 2000
-                gyrSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
-                val gyrSettings = PolarSensorSetting(gyrSettingsMap)
-                gyrDisposable = api.startGyroStreaming(deviceId, gyrSettings)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { gyrData: PolarGyroData ->
-                            for (data in gyrData.samples) {
-                                Log.d(
-                                    TAG,
-                                    "GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                                )
-                            }
-                        },
-                        { error: Throwable ->
-                            Log.e(TAG, "GYR stream failed. Reason $error")
-                        },
-                        { Log.d(TAG, "GYR stream complete") }
-                    )
-
-                //LOG MAGNOTOMETER DATA
-                val magSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
-                    EnumMap(PolarSensorSetting.SettingType::class.java)
-                magSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 20
-                magSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 16
-                magSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
-                magSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
-                val magSettings = PolarSensorSetting(magSettingsMap)
-                magDisposable = api.startMagnetometerStreaming(deviceId, magSettings)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { polarMagData: PolarMagnetometerData ->
-                            for (data in polarMagData.samples) {
-                                Log.d(
-                                    TAG,
-                                    "MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                                )
-                            }
-                        },
-                        { error: Throwable ->
-                            Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
-                        },
-                        { Log.d(TAG, "MAGNETOMETER stream complete") }
-                    )
-
-                //LOG PPG DATA
-                val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
-                    EnumMap(PolarSensorSetting.SettingType::class.java)
-                ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135
-                ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
-                //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
-                ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
-                val ppgSettings = PolarSensorSetting(ppgSettingsMap)
-                ppgDisposable = api.startPpgStreaming(deviceId, ppgSettings)
-                    .subscribe(
-                        { polarPpgData: PolarPpgData ->
-                            if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
-                                for (data in polarPpgData.samples) {
-                                    Log.d(
-                                        TAG,
-                                        "PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}"
-                                    )
-                                }
-                            }
-                        },
-                        { error: Throwable ->
-                            Log.e(TAG, "PPG stream failed. Reason $error")
-                        },
-                        { Log.d(TAG, "PPG stream complete") }
-                    )
             } else {
                 toggleButtonUp(dataCollectButton, "Start Data Collection")
                 dcDisposable?.dispose()
