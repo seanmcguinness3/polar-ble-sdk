@@ -44,6 +44,7 @@ import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.core.Flowable
 import io.reactivex.rxjava3.core.Single
 import io.reactivex.rxjava3.disposables.Disposable
+import java.io.File
 import java.util.*
 
 private const val HR_SERVICE_UUID = "0000180D-0000-1000-8000-00805F9B34FB"
@@ -68,8 +69,7 @@ class MainActivity : AppCompatActivity() {
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
         PolarBleApiDefaultImpl.defaultImplementation(
-            applicationContext,
-            setOf(
+            applicationContext, setOf(
                 PolarBleApi.PolarBleSdkFeature.FEATURE_HR,
                 PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
                 PolarBleApi.PolarBleSdkFeature.FEATURE_BATTERY_INFO,
@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
     private var ppgDisposable: Disposable? = null
     private var ppiDisposable: Disposable? = null
     private var sdkModeEnableDisposable: Disposable? = null
+    private lateinit var hRFileName: File
 
     private var sdkModeEnabledStatus = false
     private var deviceConnected = false
@@ -113,9 +114,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var doFactoryResetButton: Button
 
     //BEGINNING OF NON POLAR CODE
-    private val scanFilter = ScanFilter.Builder()
-        .setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID)))
-        .build()
+    private val scanFilter =
+        ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID))).build()
 
     private val bluetoothAdapter: BluetoothAdapter by lazy {
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -133,13 +133,10 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     @RequiresApi(Build.VERSION_CODES.M)
-    private val scanSettings = ScanSettings.Builder()
-        .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+    private val scanSettings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED)
         .setCallbackType(ScanSettings.CALLBACK_TYPE_FIRST_MATCH)
         .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
-        .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT)
-        .setReportDelay(0)
-        .build()
+        .setNumOfMatches(ScanSettings.MATCH_NUM_ONE_ADVERTISEMENT).setReportDelay(0).build()
 
     @SuppressLint("MissingPermission")
     private val gattCallback = object : BluetoothGattCallback() {
@@ -193,8 +190,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onCharacteristicChanged(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic
+            gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic
         ) {
             val strValue = characteristic.value.toString(Charsets.UTF_8)
             val strValueChar = strValue.toCharArray()
@@ -210,8 +206,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     private fun subscribeToNotifications(
-        characteristic: BluetoothGattCharacteristic,
-        gatt: BluetoothGatt
+        characteristic: BluetoothGattCharacteristic, gatt: BluetoothGatt
     ) {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
@@ -232,10 +227,7 @@ class MainActivity : AppCompatActivity() {
             safeStopBleScan()
             //if (!secondTest){
             result.device.connectGatt(
-                this@MainActivity,
-                false,
-                gattCallback,
-                BluetoothDevice.TRANSPORT_LE
+                this@MainActivity, false, gattCallback, BluetoothDevice.TRANSPORT_LE
             )
             Log.d(TAG, "FIRST CALL BACK")
             //    secondTest = true
@@ -261,23 +253,19 @@ class MainActivity : AppCompatActivity() {
     //END OF NON POLAR CODE
 
     private fun subscribeToPolarHR(deviceIDforFunc: String) {//THIS IS THE METHOD FOR CONNECTING A SECOND POLAR SENSOR.
-        var newDisposable: Disposable = api.startHrStreaming(deviceIDforFunc)
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(
-                { hrData: PolarHrData ->
+        var newDisposable: Disposable =
+            api.startHrStreaming(deviceIDforFunc).observeOn(AndroidSchedulers.mainThread())
+                .subscribe({ hrData: PolarHrData ->
                     for (sample in hrData.samples) {
-                        Log.d(
-                            TAG,
+                        val logString =
                             "$deviceIDforFunc  HR   bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
-                        )
+                        Log.d(TAG, logString)
+                        hRFileName.appendText(logString)
                     }
-                },
-                { error: Throwable ->
+                }, { error: Throwable ->
                     toggleButtonUp(dataCollectButton, "Data stream failed")
                     Log.e(TAG, "HR stream failed. Reason $error")
-                },
-                { Log.d(TAG, "HR stream complete") }
-            )
+                }, { Log.d(TAG, "HR stream complete") })
     }
 
     private fun subscribeToPolarACC(deviceIDforFunc: String) {
@@ -290,23 +278,19 @@ class MainActivity : AppCompatActivity() {
         val accSettings = PolarSensorSetting(accSettingsMap)
         accDisposable = api.startAccStreaming(deviceIDforFunc, accSettings)
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(
-                { accData: PolarAccelerometerData ->
-                    for (data in accData.samples) {
-                        Log.d(
-                            TAG,
-                            "$deviceIDforFunc ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                        )
-                    }
-                },
-                { error: Throwable ->
-                    Log.e(TAG, "Acc stream failed because $error")
-                },
-                { Log.d(TAG, "acc stream complete") }
-            )
+            .subscribe({ accData: PolarAccelerometerData ->
+                for (data in accData.samples) {
+                    Log.d(
+                        TAG,
+                        "$deviceIDforFunc ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                    )
+                }
+            }, { error: Throwable ->
+                Log.e(TAG, "Acc stream failed because $error")
+            }, { Log.d(TAG, "acc stream complete") })
     }
 
-    private fun subscribeToPolarGYR(deviceIDforFunc: String){
+    private fun subscribeToPolarGYR(deviceIDforFunc: String) {
         val gyrSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
             EnumMap(PolarSensorSetting.SettingType::class.java)
         gyrSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
@@ -314,25 +298,21 @@ class MainActivity : AppCompatActivity() {
         gyrSettingsMap[PolarSensorSetting.SettingType.RANGE] = 2000
         gyrSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 3
         val gyrSettings = PolarSensorSetting(gyrSettingsMap)
-        gyrDisposable = api.startGyroStreaming(deviceId, gyrSettings)
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(
-                { gyrData: PolarGyroData ->
+        gyrDisposable =
+            api.startGyroStreaming(deviceId, gyrSettings).observeOn(AndroidSchedulers.mainThread())
+                .subscribe({ gyrData: PolarGyroData ->
                     for (data in gyrData.samples) {
                         Log.d(
                             TAG,
                             "$deviceIDforFunc GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
                         )
                     }
-                },
-                { error: Throwable ->
+                }, { error: Throwable ->
                     Log.e(TAG, "GYR stream failed. Reason $error")
-                },
-                { Log.d(TAG, "GYR stream complete") }
-            )
+                }, { Log.d(TAG, "GYR stream complete") })
     }
 
-    private fun subscribeToPolarMAG(deviceIDforFunc: String){
+    private fun subscribeToPolarMAG(deviceIDforFunc: String) {
         val magSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
             EnumMap(PolarSensorSetting.SettingType::class.java)
         magSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 20
@@ -342,34 +322,30 @@ class MainActivity : AppCompatActivity() {
         val magSettings = PolarSensorSetting(magSettingsMap)
         magDisposable = api.startMagnetometerStreaming(deviceId, magSettings)
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(
-                { polarMagData: PolarMagnetometerData ->
-                    for (data in polarMagData.samples) {
-                        Log.d(
-                            TAG,
-                            "$deviceIDforFunc MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
-                        )
-                    }
-                },
-                { error: Throwable ->
-                    Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
-                },
-                { Log.d(TAG, "MAGNETOMETER stream complete") }
-            )
+            .subscribe({ polarMagData: PolarMagnetometerData ->
+                for (data in polarMagData.samples) {
+                    Log.d(
+                        TAG,
+                        "$deviceIDforFunc MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
+                    )
+                }
+            }, { error: Throwable ->
+                Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
+            }, { Log.d(TAG, "MAGNETOMETER stream complete") })
     }
 
-    private fun subscribeToPolarPPG(deviceIDforFunc: String){
+    private fun subscribeToPolarPPG(deviceIDforFunc: String) {
         val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
             EnumMap(PolarSensorSetting.SettingType::class.java)
-        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135 //if you find the right sample rate put it here
+        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] =
+            135 //if you find the right sample rate put it here
         //when you have to dial in the sample rates you'll probably have to re-clone the original build
         ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
         //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
         ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
         val ppgSettings = PolarSensorSetting(ppgSettingsMap)
-        ppgDisposable = api.startPpgStreaming(deviceId, ppgSettings)
-            .subscribe(
-                { polarPpgData: PolarPpgData ->
+        ppgDisposable =
+            api.startPpgStreaming(deviceId, ppgSettings).subscribe({ polarPpgData: PolarPpgData ->
                     if (polarPpgData.type == PolarPpgData.PpgDataType.PPG3_AMBIENT1) {
                         for (data in polarPpgData.samples) {
                             Log.d(
@@ -378,12 +354,9 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                     }
-                },
-                { error: Throwable ->
+                }, { error: Throwable ->
                     Log.e(TAG, "PPG stream failed. Reason $error")
-                },
-                { Log.d(TAG, "PPG stream complete") }
-            )
+                }, { Log.d(TAG, "PPG stream complete") })
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -451,8 +424,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun hrNotificationReceived(
-                identifier: String,
-                data: PolarHrData.PolarHrSample
+                identifier: String, data: PolarHrData.PolarHrSample
             ) {
                 // deprecated
             }
@@ -462,19 +434,15 @@ class MainActivity : AppCompatActivity() {
             if (!this::broadcastDisposable.isInitialized || broadcastDisposable.isDisposed) {
                 toggleButtonDown(broadcastButton, R.string.listening_broadcast)
                 broadcastDisposable = api.startListenForPolarHrBroadcasts(null)
-                    .subscribe(
-                        { polarBroadcastData: PolarHrBroadcastData ->
-                            Log.d(
-                                TAG,
-                                "HR BROADCAST ${polarBroadcastData.polarDeviceInfo.deviceId} HR: ${polarBroadcastData.hr} batt: ${polarBroadcastData.batteryStatus}"
-                            )
-                        },
-                        { error: Throwable ->
-                            toggleButtonUp(broadcastButton, R.string.listen_broadcast)
-                            Log.e(TAG, "Broadcast listener failed. Reason $error")
-                        },
-                        { Log.d(TAG, "complete") }
-                    )
+                    .subscribe({ polarBroadcastData: PolarHrBroadcastData ->
+                        Log.d(
+                            TAG,
+                            "HR BROADCAST ${polarBroadcastData.polarDeviceInfo.deviceId} HR: ${polarBroadcastData.hr} batt: ${polarBroadcastData.batteryStatus}"
+                        )
+                    }, { error: Throwable ->
+                        toggleButtonUp(broadcastButton, R.string.listen_broadcast)
+                        Log.e(TAG, "Broadcast listener failed. Reason $error")
+                    }, { Log.d(TAG, "complete") })
             } else {
                 toggleButtonUp(broadcastButton, R.string.listen_broadcast)
                 broadcastDisposable.dispose()
@@ -485,11 +453,11 @@ class MainActivity : AppCompatActivity() {
         connectButton.setOnClickListener {
             try {
                 if (deviceConnected) {
-                    for (deviceId in deviceIdArray){
+                    for (deviceId in deviceIdArray) {
                         api.disconnectFromDevice(deviceId)
                     }
                 } else {
-                    for (deviceId in deviceIdArray){
+                    for (deviceId in deviceIdArray) {
                         api.connectToDevice(deviceId)
                     }
                 }
@@ -514,34 +482,27 @@ class MainActivity : AppCompatActivity() {
                 autoConnectDisposable?.dispose()
             }
             autoConnectDisposable = api.autoConnectToDevice(-60, "180D", null)
-                .subscribe(
-                    { Log.d(TAG, "auto connect search complete") },
-                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
-                )
+                .subscribe({ Log.d(TAG, "auto connect search complete") },
+                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) })
         }
 
         scanButton.setOnClickListener {
             val isDisposed = scanDisposable?.isDisposed ?: true
             if (isDisposed) {
                 toggleButtonDown(scanButton, R.string.scanning_devices)
-                scanDisposable = api.searchForDevice()
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        { polarDeviceInfo: PolarDeviceInfo ->
-                            Log.d(
-                                TAG,
-                                "polar device found id: " + polarDeviceInfo.deviceId + " address: " + polarDeviceInfo.address + " rssi: " + polarDeviceInfo.rssi + " name: " + polarDeviceInfo.name + " isConnectable: " + polarDeviceInfo.isConnectable
-                            )
-                        },
-                        { error: Throwable ->
-                            toggleButtonUp(scanButton, "Scan devices")
-                            Log.e(TAG, "Device scan failed. Reason $error")
-                        },
-                        {
-                            toggleButtonUp(scanButton, "Scan devices")
-                            Log.d(TAG, "complete")
-                        }
-                    )
+                scanDisposable = api.searchForDevice().observeOn(AndroidSchedulers.mainThread())
+                    .subscribe({ polarDeviceInfo: PolarDeviceInfo ->
+                        Log.d(
+                            TAG,
+                            "polar device found id: " + polarDeviceInfo.deviceId + " address: " + polarDeviceInfo.address + " rssi: " + polarDeviceInfo.rssi + " name: " + polarDeviceInfo.name + " isConnectable: " + polarDeviceInfo.isConnectable
+                        )
+                    }, { error: Throwable ->
+                        toggleButtonUp(scanButton, "Scan devices")
+                        Log.e(TAG, "Device scan failed. Reason $error")
+                    }, {
+                        toggleButtonUp(scanButton, "Scan devices")
+                        Log.d(TAG, "complete")
+                    })
             } else {
                 toggleButtonUp(scanButton, "Scan devices")
                 scanDisposable?.dispose()
@@ -561,7 +522,7 @@ class MainActivity : AppCompatActivity() {
                     subscribeToPolarPPG(deviceId)
                 }
 
-                generateNewFile()
+                hRFileName = generateNewFile()
 
             } else {
                 toggleButtonUp(dataCollectButton, "Start Data Collection")
@@ -572,10 +533,9 @@ class MainActivity : AppCompatActivity() {
         toggleSdkModeButton.setOnClickListener {
             toggleSdkModeButton.isEnabled = false
             if (!sdkModeEnabledStatus) {
-                sdkModeEnableDisposable = api.enableSDKMode(deviceId)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        {
+                sdkModeEnableDisposable =
+                    api.enableSDKMode(deviceId).observeOn(AndroidSchedulers.mainThread())
+                        .subscribe({
                             Log.d(TAG, "SDK mode enabled")
                             // at this point dispose all existing streams. SDK mode enable command
                             // stops all the streams but client is not informed. This is workaround
@@ -584,31 +544,26 @@ class MainActivity : AppCompatActivity() {
                             toggleSdkModeButton.isEnabled = true
                             sdkModeEnabledStatus = true
                             toggleButtonDown(toggleSdkModeButton, R.string.disable_sdk_mode)
-                        },
-                        { error ->
+                        }, { error ->
                             toggleSdkModeButton.isEnabled = true
                             val errorString = "SDK mode enable failed: $error"
                             showToast(errorString)
                             Log.e(TAG, errorString)
-                        }
-                    )
+                        })
             } else {
-                sdkModeEnableDisposable = api.disableSDKMode(deviceId)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                        {
+                sdkModeEnableDisposable =
+                    api.disableSDKMode(deviceId).observeOn(AndroidSchedulers.mainThread())
+                        .subscribe({
                             Log.d(TAG, "SDK mode disabled")
                             toggleSdkModeButton.isEnabled = true
                             sdkModeEnabledStatus = false
                             toggleButtonUp(toggleSdkModeButton, R.string.enable_sdk_mode)
-                        },
-                        { error ->
+                        }, { error ->
                             toggleSdkModeButton.isEnabled = true
                             val errorString = "SDK mode disable failed: $error"
                             showToast(errorString)
                             Log.e(TAG, errorString)
-                        }
-                    )
+                        })
             }
         }
 
@@ -620,25 +575,19 @@ class MainActivity : AppCompatActivity() {
                     sdkModeLedEnabled = enableSdkModelLedAnimation,
                     ppiModeLedEnabled = !enablePpiModeLedAnimation
                 )
-            )
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    {
-                        Log.d(TAG, "SdkModeledAnimationEnabled set to $enableSdkModelLedAnimation")
-                        showToast("SdkModeLedAnimationEnabled set to $enableSdkModelLedAnimation")
-                        changeSdkModeLedAnimationStatusButton.text =
-                            if (enableSdkModelLedAnimation) getString(R.string.disable_sdk_mode_led_animation) else getString(
-                                R.string.enable_sdk_mode_led_animation
-                            )
-                        enableSdkModelLedAnimation = !enableSdkModelLedAnimation
-                    },
-                    { error: Throwable ->
-                        Log.e(
-                            TAG,
-                            "changeSdkModeLedAnimationStatus failed: $error"
+            ).observeOn(AndroidSchedulers.mainThread()).subscribe({
+                    Log.d(TAG, "SdkModeledAnimationEnabled set to $enableSdkModelLedAnimation")
+                    showToast("SdkModeLedAnimationEnabled set to $enableSdkModelLedAnimation")
+                    changeSdkModeLedAnimationStatusButton.text =
+                        if (enableSdkModelLedAnimation) getString(R.string.disable_sdk_mode_led_animation) else getString(
+                            R.string.enable_sdk_mode_led_animation
                         )
-                    }
-                )
+                    enableSdkModelLedAnimation = !enableSdkModelLedAnimation
+                }, { error: Throwable ->
+                    Log.e(
+                        TAG, "changeSdkModeLedAnimationStatus failed: $error"
+                    )
+                })
         }
 
         changePpiModeLedAnimationStatusButton.setOnClickListener {
@@ -647,65 +596,50 @@ class MainActivity : AppCompatActivity() {
                     sdkModeLedEnabled = !enableSdkModelLedAnimation,
                     ppiModeLedEnabled = enablePpiModeLedAnimation
                 )
-            )
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    {
-                        Log.d(TAG, "PpiModeLedAnimationEnabled set to $enablePpiModeLedAnimation")
-                        showToast("PpiModeLedAnimationEnabled set to $enablePpiModeLedAnimation")
-                        changePpiModeLedAnimationStatusButton.text =
-                            if (enablePpiModeLedAnimation) getString(R.string.disable_ppi_mode_led_animation) else getString(
-                                R.string.enable_ppi_mode_led_animation
-                            )
-                        enablePpiModeLedAnimation = !enablePpiModeLedAnimation
-                    },
-                    { error: Throwable ->
-                        Log.e(
-                            TAG,
-                            "changePpiModeLedAnimationStatus failed: $error"
+            ).observeOn(AndroidSchedulers.mainThread()).subscribe({
+                    Log.d(TAG, "PpiModeLedAnimationEnabled set to $enablePpiModeLedAnimation")
+                    showToast("PpiModeLedAnimationEnabled set to $enablePpiModeLedAnimation")
+                    changePpiModeLedAnimationStatusButton.text =
+                        if (enablePpiModeLedAnimation) getString(R.string.disable_ppi_mode_led_animation) else getString(
+                            R.string.enable_ppi_mode_led_animation
                         )
-                    }
-                )
+                    enablePpiModeLedAnimation = !enablePpiModeLedAnimation
+                }, { error: Throwable ->
+                    Log.e(
+                        TAG, "changePpiModeLedAnimationStatus failed: $error"
+                    )
+                })
         }
 
         doFactoryResetButton.setOnClickListener {
             api.doFactoryReset(deviceId, preservePairingInformation = true)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                    {
-                        Log.d(TAG, "send do factory reset to device")
-                        showToast("send do factory reset to device")
-                    },
-                    { error: Throwable -> Log.e(TAG, "doFactoryReset() failed: $error") }
-                )
+                .observeOn(AndroidSchedulers.mainThread()).subscribe({
+                    Log.d(TAG, "send do factory reset to device")
+                    showToast("send do factory reset to device")
+                }, { error: Throwable -> Log.e(TAG, "doFactoryReset() failed: $error") })
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 requestPermissions(
                     arrayOf(
-                        Manifest.permission.BLUETOOTH_SCAN,
-                        Manifest.permission.BLUETOOTH_CONNECT
+                        Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT
                     ), PERMISSION_REQUEST_CODE
                 )
             } else {
                 requestPermissions(
-                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                    PERMISSION_REQUEST_CODE
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), PERMISSION_REQUEST_CODE
                 )
             }
         } else {
             requestPermissions(
-                arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION),
-                PERMISSION_REQUEST_CODE
+                arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), PERMISSION_REQUEST_CODE
             )
         }
     }
 
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
+        requestCode: Int, permissions: Array<String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
