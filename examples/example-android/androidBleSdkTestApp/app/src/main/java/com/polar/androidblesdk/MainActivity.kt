@@ -32,6 +32,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.util.Pair
 import com.google.android.material.snackbar.Snackbar
+import com.polar.androidblesdk.util.FileExporter
+import com.polar.androidblesdk.util.generateNewFile
 import com.polar.sdk.api.PolarBleApi
 import com.polar.sdk.api.PolarBleApiCallback
 import com.polar.sdk.api.PolarBleApiDefaultImpl
@@ -558,6 +560,8 @@ class MainActivity : AppCompatActivity() {
                     subscribeToPolarMAG(deviceId)
                     subscribeToPolarPPG(deviceId)
                 }
+
+                generateNewFile()
 
             } else {
                 toggleButtonUp(dataCollectButton, "Start Data Collection")
