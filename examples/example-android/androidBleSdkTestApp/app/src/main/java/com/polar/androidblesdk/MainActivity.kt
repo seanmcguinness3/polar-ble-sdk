@@ -63,9 +63,6 @@ class MainActivity : AppCompatActivity() {
 
     // ATTENTION! Replace with the device ID from your device.
     private var deviceIdArray = arrayOf("C19E1A21", "C929ED29")
-    private var deviceId = "C19E1A21"
-    private var deviceId2 = "C929ED29"
-
 
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
@@ -202,6 +199,8 @@ class MainActivity : AppCompatActivity() {
             val strValueChar = strValue.toCharArray()
             val strValueLog = strValueChar[1].toInt()
             Log.d(TAG, "HeartBeat = \"$strValueLog\"")
+            val file = File("${getSaveFolder().absolutePath}/${gatt.device.name}-NPData.txt")
+            file.appendText(strValueLog.toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
         }
     }
 
@@ -220,6 +219,9 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "ERROR: setNotification(true) failed for ${characteristic.uuid}")
                 return
             }
+
+            generateNewFile("${gatt.device.name}-NPData.txt")//this is not usefull but just figure out what would be when you get the real sensor
+            //The device's name should show up as a service if you wanna go that route. but initially it could just be hard coded
             cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             gatt.writeDescriptor(cccDescriptor)
         }
@@ -258,6 +260,11 @@ class MainActivity : AppCompatActivity() {
     }
     //END OF NON POLAR CODE
 
+    private fun setTimeStamp(deviceIDforFunc: String){
+        val rightNow = Calendar.getInstance()
+        var newDisposable: Disposable =
+            api.setLocalTime(deviceIDforFunc,rightNow).subscribe()
+    }
     private fun subscribeToPolarHR(deviceIDforFunc: String) {//THIS IS THE METHOD FOR CONNECTING A SECOND POLAR SENSOR.
         var newDisposable: Disposable =
             api.startHrStreaming(deviceIDforFunc).observeOn(AndroidSchedulers.mainThread())
@@ -311,7 +318,7 @@ class MainActivity : AppCompatActivity() {
                     for (data in gyrData.samples) {
                         val logString = "$deviceIDforFunc GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
                         Log.d(TAG, logString)
-                        val file = File("${getSaveFolder().absolutePath}/$deviceId-GYRData.txt")
+                        val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-GYRData.txt")
                         file.appendText(logString)
                     }
                 }, { error: Throwable ->
@@ -365,6 +372,7 @@ class MainActivity : AppCompatActivity() {
                 }, { Log.d(TAG, "PPG stream complete") })
     }
 
+    @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -403,7 +411,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun deviceConnected(polarDeviceInfo: PolarDeviceInfo) {
                 Log.d(TAG, "CONNECTED: ${polarDeviceInfo.deviceId}")
-                deviceId = polarDeviceInfo.deviceId
+                val deviceId = polarDeviceInfo.deviceId
                 deviceConnected = true
                 val buttonText = getString(R.string.disconnect_from_device, deviceId)
                 toggleButtonDown(connectButton, buttonText)
@@ -416,7 +424,7 @@ class MainActivity : AppCompatActivity() {
             override fun deviceDisconnected(polarDeviceInfo: PolarDeviceInfo) {
                 Log.d(TAG, "DISCONNECTED: ${polarDeviceInfo.deviceId}")
                 deviceConnected = false
-                val buttonText = getString(R.string.connect_to_device, deviceId)
+                val buttonText = getString(R.string.connect_to_device, deviceIdArray[0])
                 toggleButtonUp(connectButton, buttonText)
                 toggleButtonUp(toggleSdkModeButton, R.string.enable_sdk_mode)
             }
@@ -455,7 +463,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        connectButton.text = getString(R.string.connect_to_device, deviceId)
+        connectButton.text = getString(R.string.connect_to_device, deviceIdArray[0])
         connectButton.setOnClickListener {
             try {
                 if (deviceConnected) {
@@ -463,8 +471,10 @@ class MainActivity : AppCompatActivity() {
                         api.disconnectFromDevice(deviceId)
                     }
                 } else {
+                    val rightNow = Calendar.getInstance()
                     for (deviceId in deviceIdArray) {
                         api.connectToDevice(deviceId)
+
                     }
                 }
             } catch (polarInvalidArgument: PolarInvalidArgument) {
@@ -521,6 +531,8 @@ class MainActivity : AppCompatActivity() {
                 toggleButtonDown(dataCollectButton, "Stop Collecting Data")
 
                 for (deviceId in deviceIdArray) {
+
+                    setTimeStamp(deviceId)
                     subscribeToPolarHR(deviceId)
                     subscribeToPolarACC(deviceId)
                     subscribeToPolarGYR(deviceId)
@@ -542,6 +554,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        /* DON'T KNOW WHAT THIS DOES
         toggleSdkModeButton.setOnClickListener {
             toggleSdkModeButton.isEnabled = false
             if (!sdkModeEnabledStatus) {
@@ -577,11 +590,11 @@ class MainActivity : AppCompatActivity() {
                             Log.e(TAG, errorString)
                         })
             }
-        }
+        }*/
 
         var enableSdkModelLedAnimation = false
         var enablePpiModeLedAnimation = false
-        changeSdkModeLedAnimationStatusButton.setOnClickListener {
+        /*changeSdkModeLedAnimationStatusButton.setOnClickListener { COOL BUT PROBLY DON'T NEED
             api.setLedConfig(
                 deviceId, LedConfig(
                     sdkModeLedEnabled = enableSdkModelLedAnimation,
@@ -600,9 +613,9 @@ class MainActivity : AppCompatActivity() {
                         TAG, "changeSdkModeLedAnimationStatus failed: $error"
                     )
                 })
-        }
+        }*/
 
-        changePpiModeLedAnimationStatusButton.setOnClickListener {
+        /*changePpiModeLedAnimationStatusButton.setOnClickListener {
             api.setLedConfig(
                 deviceId, LedConfig(
                     sdkModeLedEnabled = !enableSdkModelLedAnimation,
@@ -621,15 +634,8 @@ class MainActivity : AppCompatActivity() {
                         TAG, "changePpiModeLedAnimationStatus failed: $error"
                     )
                 })
-        }
+        }*/
 
-        doFactoryResetButton.setOnClickListener {
-            api.doFactoryReset(deviceId, preservePairingInformation = true)
-                .observeOn(AndroidSchedulers.mainThread()).subscribe({
-                    Log.d(TAG, "send do factory reset to device")
-                    showToast("send do factory reset to device")
-                }, { error: Throwable -> Log.e(TAG, "doFactoryReset() failed: $error") })
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
