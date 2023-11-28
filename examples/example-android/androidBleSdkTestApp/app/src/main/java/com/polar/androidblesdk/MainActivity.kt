@@ -48,11 +48,27 @@ import io.reactivex.rxjava3.disposables.Disposable
 import java.io.File
 import java.util.*
 
+/* //THESE ARE FOR THE HEAR RATE SENSOR
 private const val HR_SERVICE_UUID = "0000180D-0000-1000-8000-00805F9B34FB"
 private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB"
 private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF"
 private const val CHAR_FOR_NOTIFY_UUID = "00002A37-0000-1000-8000-00805F9B34FB"
 private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
+
+ */
+
+
+// THESE ARE (HOPEFULLY) FOR THE V02 MAX SENSOR
+private const val HR_SERVICE_UUID = "00001523-1212-EFDE-1523-785FEABCD123"
+private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB" //DON'T KNOW WHAT TO PUT BUT I DON'T NEED TO READ ANYTHING ANYWAY
+private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF" //SAME HERE
+private const val CHAR_FOR_NOTIFY_UUID = "00001527-1212-EFDE-1523-785FEABCD123" //FIRST CHAR OF THIS ONE IS DEF. BREATHS PER MIN
+//private const val CHAR_FOR_NOTIFY_UUID = "00001528-1212-EFDE-1523-785FEABCD123" //THIS ONE ALWAYS DISPLAYS 7
+//private const val CHAR_FOR_NOTIFY_UUID = "00001529-1212-EFDE-1523-785FEABCD123" //
+private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
+
+
+
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -132,8 +148,9 @@ class MainActivity : AppCompatActivity() {
     private var connectedGatt: BluetoothGatt? = null
     private var characteristicForRead: BluetoothGattCharacteristic? = null
     private var characteristicForWrite: BluetoothGattCharacteristic? = null
-    private var characteristicForNotify: BluetoothGattCharacteristic? = null
-
+    private var characteristicForNotify1: BluetoothGattCharacteristic? = null
+    private var characteristicForNotify2: BluetoothGattCharacteristic? = null
+    private var characteristicForNotify3: BluetoothGattCharacteristic? = null
     @SuppressLint("MissingPermission")
     @RequiresApi(Build.VERSION_CODES.M)
     private val scanSettings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED)
@@ -182,10 +199,10 @@ class MainActivity : AppCompatActivity() {
             connectedGatt = gatt
             characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
             characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
-            characteristicForNotify =
-                service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
 
-            characteristicForNotify?.let {
+            characteristicForNotify1 =
+                service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
+            characteristicForNotify1?.let {
                 subscribeToNotifications(it, gatt)
             } ?: run {
                 Log.d(TAG, "notify characteristic not found $CHAR_FOR_NOTIFY_UUID")
@@ -195,10 +212,13 @@ class MainActivity : AppCompatActivity() {
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic
         ) {
-            val strValue = characteristic.value.toString(Charsets.UTF_8)
+            val strUUID = characteristic.uuid
+            //val strValue = characteristic.value.toString(Charsets.UTF_8)
+            val strValue = characteristic.value.toString(Charsets.US_ASCII)
             val strValueChar = strValue.toCharArray()
             val strValueLog = strValueChar[1].toInt()
-            Log.d(TAG, "HeartBeat = \"$strValueLog\"")
+
+            Log.d(TAG, "NON POLAR-NOTIFY VALUE = ${strValueChar[0].toInt()}; ${strValueChar[1].toInt()};  ${strValueChar[2].toInt()};   ${strValueChar[3].toInt()};   ${strValueChar[4].toInt()};  ${strValueChar[5].toInt()}; ")
             val file = File("${getSaveFolder().absolutePath}/${gatt.device.name}-NPData.txt")
             file.appendText(strValueLog.toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
         }
@@ -220,7 +240,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            generateNewFile("${gatt.device.name}-NPData.txt")//this is not usefull but just figure out what would be when you get the real sensor
+            generateNewFile("${gatt.device.name}-NPData.txt")//this is not useful but just figure out what would be when you get the real sensor
             //The device's name should show up as a service if you wanna go that route. but initially it could just be hard coded
             cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             gatt.writeDescriptor(cccDescriptor)
@@ -497,7 +517,7 @@ class MainActivity : AppCompatActivity() {
 
         //CONNECT TO NON-POLAR DEVICE
         connectNpButton.setOnClickListener {
-            //APPARANTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
+            //APPARENTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
             bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
         }
 
