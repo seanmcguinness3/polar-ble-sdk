@@ -48,7 +48,7 @@ import io.reactivex.rxjava3.disposables.Disposable
 import java.io.File
 import java.util.*
 
-/* //THESE ARE FOR THE HEAR RATE SENSOR
+/*//THESE ARE FOR THE HEAR RATE SENSOR
 private const val HR_SERVICE_UUID = "0000180D-0000-1000-8000-00805F9B34FB"
 private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB"
 private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF"
@@ -56,6 +56,7 @@ private const val CHAR_FOR_NOTIFY_UUID = "00002A37-0000-1000-8000-00805F9B34FB"
 private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
 
  */
+
 
 
 // THESE ARE (HOPEFULLY) FOR THE V02 MAX SENSOR
@@ -189,17 +190,14 @@ class MainActivity : AppCompatActivity() {
                 gatt.disconnect()
                 return
             }
-
             val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID)) ?: run {
                 Log.d(TAG, "error: service not fount: $HR_SERVICE_UUID")
                 gatt.disconnect()
                 return
             }
-
             connectedGatt = gatt
             characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
             characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
-
             characteristicForNotify1 =
                 service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
             characteristicForNotify1?.let {
@@ -212,15 +210,10 @@ class MainActivity : AppCompatActivity() {
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic
         ) {
-            val strUUID = characteristic.uuid
-            //val strValue = characteristic.value.toString(Charsets.UTF_8)
-            val strValue = characteristic.value.toString(Charsets.US_ASCII)
-            val strValueChar = strValue.toCharArray()
-            val strValueLog = strValueChar[1].toInt()
-
-            Log.d(TAG, "NON POLAR-NOTIFY VALUE = ${strValueChar[0].toInt()}; ${strValueChar[1].toInt()};  ${strValueChar[2].toInt()};   ${strValueChar[3].toInt()};   ${strValueChar[4].toInt()};  ${strValueChar[5].toInt()}; ")
+            val strValueForDebug = characteristic.value
+            Log.d(TAG, "Debug unconverted value $strValueForDebug, using as array: ${strValueForDebug[0]}, ${strValueForDebug[1]}, ${strValueForDebug[2]}, ${strValueForDebug[3]}, ${strValueForDebug[4]}, ${strValueForDebug[5]}")
             val file = File("${getSaveFolder().absolutePath}/${gatt.device.name}-NPData.txt")
-            file.appendText(strValueLog.toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
+            file.appendText(strValueForDebug[0].toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
         }
     }
 
@@ -258,15 +251,6 @@ class MainActivity : AppCompatActivity() {
                 this@MainActivity, false, gattCallback, BluetoothDevice.TRANSPORT_LE
             )
             Log.d(TAG, "FIRST CALL BACK")
-            //    secondTest = true
-            //IF YOU WANT TO DO MULTIPLE SENSORS WITH THIS METHOD THEN YOU NEED A SECOND gattCallback
-            //SINCE THE CALL BACKS ARE SENSOR SPECIFIC, THIS METHOD MAKES SENSE FOR THE NON POLAR SENSORS,
-            //OF WHICH THERE ARE 2. BUT I DON'T THINK IT MAKES SENSE FOR THE 4X POLAR SENSORS.
-            //}else{
-            //    result.device.connectGatt(this@MainActivity, false, gattCallback2, BluetoothDevice.TRANSPORT_LE)
-            //    Log.d(TAG, "SECOND CALL BACK")
-            //}
-
         }
 
         override fun onBatchScanResults(results: MutableList<ScanResult>?) {
@@ -519,6 +503,7 @@ class MainActivity : AppCompatActivity() {
         connectNpButton.setOnClickListener {
             //APPARENTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
             bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
+            bleScanner.startScan(mutableListOf(scanFilter2), scanSettings2, scanCallback2)
         }
 
         autoConnectButton.setOnClickListener {
