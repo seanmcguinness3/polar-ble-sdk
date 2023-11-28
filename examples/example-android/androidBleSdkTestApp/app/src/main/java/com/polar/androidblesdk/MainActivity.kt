@@ -262,8 +262,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setTimeStamp(deviceIDforFunc: String){
         val rightNow = Calendar.getInstance()
-        var newDisposable: Disposable =
-            api.setLocalTime(deviceIDforFunc,rightNow).subscribe()
+        rightNow.time = Date()
+        api.setLocalTime(deviceIDforFunc,rightNow)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe()
     }
     private fun subscribeToPolarHR(deviceIDforFunc: String) {//THIS IS THE METHOD FOR CONNECTING A SECOND POLAR SENSOR.
         var newDisposable: Disposable =
@@ -273,8 +275,9 @@ class MainActivity : AppCompatActivity() {
                         val logString =
                             "$deviceIDforFunc  HR   bpm: ${sample.hr} rrs: ${sample.rrsMs} rrAvailable: ${sample.rrAvailable} contactStatus: ${sample.contactStatus} contactStatusSupported: ${sample.contactStatusSupported}"
                         Log.d(TAG, logString)
-                        val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-HRData.txt")
-                        file.appendText(logString)
+                        val fileString = "${System.currentTimeMillis()};${sample.hr}"
+                        val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-HRData.txt \n")
+                        file.appendText(fileString)
                     }
                 }, { error: Throwable ->
                     toggleButtonUp(dataCollectButton, "Data stream failed")
@@ -296,7 +299,8 @@ class MainActivity : AppCompatActivity() {
                 for (data in accData.samples) {
                     val logString = "$deviceIDforFunc ACC    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
                     val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-ACCData.txt")
-                    file.appendText(logString)
+                    val fileString = "${System.currentTimeMillis()};${data.timeStamp};${data.x};${data.y};${data.z}; \n"
+                    file.appendText(fileString)
                     Log.d(TAG, logString)
                 }
             }, { error: Throwable ->
@@ -318,8 +322,9 @@ class MainActivity : AppCompatActivity() {
                     for (data in gyrData.samples) {
                         val logString = "$deviceIDforFunc GYR    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
                         Log.d(TAG, logString)
+                        val fileString = "${System.currentTimeMillis()};${data.timeStamp};${data.x};${data.y};${data.z} \n"
                         val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-GYRData.txt")
-                        file.appendText(logString)
+                        file.appendText(fileString)
                     }
                 }, { error: Throwable ->
                     Log.e(TAG, "GYR stream failed. Reason $error")
@@ -340,8 +345,9 @@ class MainActivity : AppCompatActivity() {
                 for (data in polarMagData.samples) {
                     val logString = "$deviceIDforFunc MAG    x: ${data.x} y: ${data.y} z: ${data.z} timeStamp: ${data.timeStamp}"
                     Log.d(TAG,logString)
+                    val fileString = "${System.currentTimeMillis()};${data.timeStamp};${data.x};${data.y};${data.z} \n"
                     val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-MAGData.txt")
-                    file.appendText(logString)
+                    file.appendText(fileString)
                 }
             }, { error: Throwable ->
                 Log.e(TAG, "MAGNETOMETER stream failed. Reason $error")
@@ -351,10 +357,11 @@ class MainActivity : AppCompatActivity() {
     private fun subscribeToPolarPPG(deviceIDforFunc: String) {
         val ppgSettingsMap: MutableMap<PolarSensorSetting.SettingType, Int> =
             EnumMap(PolarSensorSetting.SettingType::class.java)
-        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135 //if you find the right sample rate put it here
-        //when you have to dial in the sample rates you'll probably have to re-clone the original build
+        ppgSettingsMap[PolarSensorSetting.SettingType.SAMPLE_RATE] = 135 //sensors appear to have different sample rates for ppg.
+        //only one sample rate is availible when sdk mode is turned off. I haven't messed with sdk mode yet, so hoping to keep it off for now.
+        //unless SDK mode is necessary for some reason, i would like to find sensors that have all the same ppg sample rates for the initial app.
+        //probably all the ones that jin bought on sale will have 55 Hz sample rate.
         ppgSettingsMap[PolarSensorSetting.SettingType.RESOLUTION] = 22
-        //ppgSettingsMap[PolarSensorSetting.SettingType.RANGE] = 50
         ppgSettingsMap[PolarSensorSetting.SettingType.CHANNELS] = 4
         val ppgSettings = PolarSensorSetting(ppgSettingsMap)
         ppgDisposable =
@@ -363,8 +370,9 @@ class MainActivity : AppCompatActivity() {
                         for (data in polarPpgData.samples) {
                             val logString = "$deviceIDforFunc PPG    ppg0: ${data.channelSamples[0]} ppg1: ${data.channelSamples[1]} ppg2: ${data.channelSamples[2]} ambient: ${data.channelSamples[3]} timeStamp: ${data.timeStamp}"
                             Log.d(TAG, logString)
+                            val fileString = "${System.currentTimeMillis()};${data.timeStamp};${data.channelSamples[0]};${data.channelSamples[1]};${data.channelSamples[2]};${data.channelSamples[3]} \n"
                             val file = File("${getSaveFolder().absolutePath}/$deviceIDforFunc-PPGData.txt")
-                            file.appendText(logString)
+                            file.appendText(fileString)
                         }
                     }
                 }, { error: Throwable ->
@@ -544,6 +552,12 @@ class MainActivity : AppCompatActivity() {
                     gYRFileName = generateNewFile("$deviceId-GYRData.txt")
                     mAGFileName = generateNewFile("$deviceId-MAGData.txt")
                     pPGFileName = generateNewFile("$deviceId-PPGData.txt")
+
+                    hRFileName.appendText("Phone timestamp;HR [bpm] \n")
+                    aCCFileName.appendText("Phone timestamp;sensor timestamp [ns];X [mg];Y [mg];Z [mg] \n")
+                    gYRFileName.appendText("Phone timestamp;sensor timestamp [ns];X [dps];Y [dps];Z [dps] \n")
+                    mAGFileName.appendText("Phone timestamp;sensor timestamp [ns];X [G];Y [G];Z [G] \n")
+                    pPGFileName.appendText("Phone timestamp;sensor timestamp [ns];channel 0;channel 1;channel 2;ambient \n")
                 }
 
 
@@ -554,7 +568,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        /* DON'T KNOW WHAT THIS DOES
+        /* I might still need this, issue with ppg sample rates
         toggleSdkModeButton.setOnClickListener {
             toggleSdkModeButton.isEnabled = false
             if (!sdkModeEnabledStatus) {
@@ -590,50 +604,6 @@ class MainActivity : AppCompatActivity() {
                             Log.e(TAG, errorString)
                         })
             }
-        }*/
-
-        var enableSdkModelLedAnimation = false
-        var enablePpiModeLedAnimation = false
-        /*changeSdkModeLedAnimationStatusButton.setOnClickListener { COOL BUT PROBLY DON'T NEED
-            api.setLedConfig(
-                deviceId, LedConfig(
-                    sdkModeLedEnabled = enableSdkModelLedAnimation,
-                    ppiModeLedEnabled = !enablePpiModeLedAnimation
-                )
-            ).observeOn(AndroidSchedulers.mainThread()).subscribe({
-                    Log.d(TAG, "SdkModeledAnimationEnabled set to $enableSdkModelLedAnimation")
-                    showToast("SdkModeLedAnimationEnabled set to $enableSdkModelLedAnimation")
-                    changeSdkModeLedAnimationStatusButton.text =
-                        if (enableSdkModelLedAnimation) getString(R.string.disable_sdk_mode_led_animation) else getString(
-                            R.string.enable_sdk_mode_led_animation
-                        )
-                    enableSdkModelLedAnimation = !enableSdkModelLedAnimation
-                }, { error: Throwable ->
-                    Log.e(
-                        TAG, "changeSdkModeLedAnimationStatus failed: $error"
-                    )
-                })
-        }*/
-
-        /*changePpiModeLedAnimationStatusButton.setOnClickListener {
-            api.setLedConfig(
-                deviceId, LedConfig(
-                    sdkModeLedEnabled = !enableSdkModelLedAnimation,
-                    ppiModeLedEnabled = enablePpiModeLedAnimation
-                )
-            ).observeOn(AndroidSchedulers.mainThread()).subscribe({
-                    Log.d(TAG, "PpiModeLedAnimationEnabled set to $enablePpiModeLedAnimation")
-                    showToast("PpiModeLedAnimationEnabled set to $enablePpiModeLedAnimation")
-                    changePpiModeLedAnimationStatusButton.text =
-                        if (enablePpiModeLedAnimation) getString(R.string.disable_ppi_mode_led_animation) else getString(
-                            R.string.enable_ppi_mode_led_animation
-                        )
-                    enablePpiModeLedAnimation = !enablePpiModeLedAnimation
-                }, { error: Throwable ->
-                    Log.e(
-                        TAG, "changePpiModeLedAnimationStatus failed: $error"
-                    )
-                })
         }*/
 
 
