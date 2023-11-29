@@ -63,9 +63,9 @@ private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
 private const val HR_SERVICE_UUID = "00001523-1212-EFDE-1523-785FEABCD123"
 private const val CHAR_FOR_READ_UUID = "00002A38-0000-1000-8000-00805F9B34FB" //DON'T KNOW WHAT TO PUT BUT I DON'T NEED TO READ ANYTHING ANYWAY
 private const val CHAR_FOR_WRITE_UUID = "25AE1443-05D3-4C5B-8281-93D4E07420CF" //SAME HERE
-private const val CHAR_FOR_NOTIFY_UUID = "00001527-1212-EFDE-1523-785FEABCD123" //FIRST CHAR OF THIS ONE IS DEF. BREATHS PER MIN
-//private const val CHAR_FOR_NOTIFY_UUID = "00001528-1212-EFDE-1523-785FEABCD123" //THIS ONE ALWAYS DISPLAYS 7
-//private const val CHAR_FOR_NOTIFY_UUID = "00001529-1212-EFDE-1523-785FEABCD123" //
+private const val CHAR_FOR_NOTIFY_UUID = "00001527-1212-EFDE-1523-785FEABCD123" //SECOND CHAR OF THIS ONE IS DEF. BREATHS PER MIN
+private const val CHAR_FOR_NOTIFY_UUID2 = "00001528-1212-EFDE-1523-785FEABCD123"
+private const val CHAR_FOR_NOTIFY_UUID3 = "00001529-1212-EFDE-1523-785FEABCD123" //
 private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805F9B34FB"
 
 
@@ -121,6 +121,8 @@ class MainActivity : AppCompatActivity() {
     private var sdkModeEnabledStatus = false
     private var deviceConnected = false
     private var bluetoothEnabled = false
+    private var secondNotifyConnected = false
+    private var thirdNotifyConnected = false
 
     private lateinit var broadcastButton: Button
     private lateinit var connectButton: Button
@@ -136,6 +138,7 @@ class MainActivity : AppCompatActivity() {
     //BEGINNING OF NON POLAR CODE
     private val scanFilter =
         ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(HR_SERVICE_UUID))).build()
+
 
     private val bluetoothAdapter: BluetoothAdapter by lazy {
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -195,25 +198,34 @@ class MainActivity : AppCompatActivity() {
                 gatt.disconnect()
                 return
             }
-            connectedGatt = gatt
-            characteristicForRead = service.getCharacteristic(UUID.fromString(CHAR_FOR_READ_UUID))
-            characteristicForWrite = service.getCharacteristic(UUID.fromString(CHAR_FOR_WRITE_UUID))
-            characteristicForNotify1 =
-                service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
-            characteristicForNotify1?.let {
-                subscribeToNotifications(it, gatt)
-            } ?: run {
-                Log.d(TAG, "notify characteristic not found $CHAR_FOR_NOTIFY_UUID")
+            subscribeToNotifications(service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID)),gatt)
+        }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor?, status: Int) {
+            super.onDescriptorWrite(gatt, descriptor, status)
+            if (secondNotifyConnected && !thirdNotifyConnected){
+                Log.d(TAG,"connectiong to 1529")
+                val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID))
+                subscribeToNotifications(service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID3)),gatt)
+                thirdNotifyConnected = true
+            }
+
+            if (!secondNotifyConnected){
+                Log.d(TAG,"connecting to 1528")
+                val service = gatt.getService(UUID.fromString(HR_SERVICE_UUID))
+                subscribeToNotifications(service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID2)),gatt)
+                secondNotifyConnected = true
             }
         }
 
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic
         ) {
+            val uuidString = characteristic.uuid.toString()
             val strValueForDebug = characteristic.value
-            Log.d(TAG, "Debug unconverted value $strValueForDebug, using as array: ${strValueForDebug[0]}, ${strValueForDebug[1]}, ${strValueForDebug[2]}, ${strValueForDebug[3]}, ${strValueForDebug[4]}, ${strValueForDebug[5]}")
-            val file = File("${getSaveFolder().absolutePath}/${gatt.device.name}-NPData.txt")
-            file.appendText(strValueForDebug[0].toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
+            Log.d(TAG, "$uuidString Data: ${strValueForDebug[0]}, ${strValueForDebug[1]}, ${strValueForDebug[2]}, ${strValueForDebug[3]}, ${strValueForDebug[4]}, ${strValueForDebug[5]}")
+            //val file = File("${getSaveFolder().absolutePath}/${gatt.device.name}-NPData.txt")
+            //file.appendText(strValueForDebug[0].toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
         }
     }
 
@@ -226,6 +238,7 @@ class MainActivity : AppCompatActivity() {
     private fun subscribeToNotifications(
         characteristic: BluetoothGattCharacteristic, gatt: BluetoothGatt
     ) {
+        Log.d(TAG, "does this run twice")
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
             if (!gatt.setCharacteristicNotification(characteristic, true)) {
@@ -233,7 +246,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            generateNewFile("${gatt.device.name}-NPData.txt")//this is not useful but just figure out what would be when you get the real sensor
+           // generateNewFile("${gatt.device.name}-NPData.txt")//this is not useful but just figure out what would be when you get the real sensor
             //The device's name should show up as a service if you wanna go that route. but initially it could just be hard coded
             cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             gatt.writeDescriptor(cccDescriptor)
@@ -503,7 +516,7 @@ class MainActivity : AppCompatActivity() {
         connectNpButton.setOnClickListener {
             //APPARENTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
             bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
-            bleScanner.startScan(mutableListOf(scanFilter2), scanSettings2, scanCallback2)
+            //bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback2)
         }
 
         autoConnectButton.setOnClickListener {
