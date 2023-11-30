@@ -223,9 +223,17 @@ class MainActivity : AppCompatActivity() {
         ) {
             val uuidString = characteristic.uuid.toString()
             val strValueForDebug = characteristic.value
-            Log.d(TAG, "$uuidString Data: ${strValueForDebug[0]}, ${strValueForDebug[1]}, ${strValueForDebug[2]}, ${strValueForDebug[3]}, ${strValueForDebug[4]}, ${strValueForDebug[5]}")
-            //val file = File("${getSaveFolder().absolutePath}/${gatt.device.name}-NPData.txt")
-            //file.appendText(strValueForDebug[0].toString()) //Just make sure this is populating but don't worry about representation b/c will use diff sensor
+
+            var logString = ""
+            var secondToLastIdx = 0
+            for(i in 0..(strValueForDebug.size-2)){
+                logString += "${strValueForDebug[i]}, "
+                secondToLastIdx = i
+            }
+            logString += "${strValueForDebug[secondToLastIdx+1]}\n"
+            Log.d(TAG, "$uuidString Data: $logString")
+            val file = File("${getSaveFolder().absolutePath}/${uuidString}.txt")
+            file.appendText(logString)
         }
     }
 
@@ -246,8 +254,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-           // generateNewFile("${gatt.device.name}-NPData.txt")//this is not useful but just figure out what would be when you get the real sensor
-            //The device's name should show up as a service if you wanna go that route. but initially it could just be hard coded
+            generateNewFile("${characteristic.uuid}.txt")
             cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             gatt.writeDescriptor(cccDescriptor)
         }
