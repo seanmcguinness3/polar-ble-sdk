@@ -11,12 +11,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <Button
-            android:id="@+id/broadcast_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/listen_broadcast" />
-
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

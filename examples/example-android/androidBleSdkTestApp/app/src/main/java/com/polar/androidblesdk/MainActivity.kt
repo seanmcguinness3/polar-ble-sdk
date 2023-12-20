@@ -124,7 +124,6 @@ class MainActivity : AppCompatActivity() {
     private var secondNotifyConnected = false
     private var thirdNotifyConnected = false
 
-    private lateinit var broadcastButton: Button
     private lateinit var connectButton: Button
     private lateinit var autoConnectButton: Button
     private lateinit var scanButton: Button
@@ -282,6 +281,13 @@ class MainActivity : AppCompatActivity() {
             safeStopBleScan()
         }
     }
+
+    private val listScanCallback = object : ScanCallback(){
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            super.onScanResult(callbackType, result)
+            Log.d(TAG, "Device Found: ${result.device.name}")
+        }
+    }
     //END OF NON POLAR CODE
 
     private fun setTimeStamp(deviceIDforFunc: String){
@@ -404,12 +410,11 @@ class MainActivity : AppCompatActivity() {
                 }, { Log.d(TAG, "PPG stream complete") })
     }
 
-    @SuppressLint("MissingPermission")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Log.d(TAG, "version: " + PolarBleApiDefaultImpl.versionInfo())
-        broadcastButton = findViewById(R.id.broadcast_button)
         connectButton = findViewById(R.id.connect_button)
         autoConnectButton = findViewById(R.id.auto_connect_button)
         scanButton = findViewById(R.id.scan_button)
@@ -476,25 +481,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        broadcastButton.setOnClickListener {
-            if (!this::broadcastDisposable.isInitialized || broadcastDisposable.isDisposed) {
-                toggleButtonDown(broadcastButton, R.string.listening_broadcast)
-                broadcastDisposable = api.startListenForPolarHrBroadcasts(null)
-                    .subscribe({ polarBroadcastData: PolarHrBroadcastData ->
-                        Log.d(
-                            TAG,
-                            "HR BROADCAST ${polarBroadcastData.polarDeviceInfo.deviceId} HR: ${polarBroadcastData.hr} batt: ${polarBroadcastData.batteryStatus}"
-                        )
-                    }, { error: Throwable ->
-                        toggleButtonUp(broadcastButton, R.string.listen_broadcast)
-                        Log.e(TAG, "Broadcast listener failed. Reason $error")
-                    }, { Log.d(TAG, "complete") })
-            } else {
-                toggleButtonUp(broadcastButton, R.string.listen_broadcast)
-                broadcastDisposable.dispose()
-            }
-        }
-
         connectButton.text = getString(R.string.connect_to_device, deviceIdArray[0])
         connectButton.setOnClickListener {
             try {
@@ -522,8 +508,9 @@ class MainActivity : AppCompatActivity() {
         //CONNECT TO NON-POLAR DEVICE
         connectNpButton.setOnClickListener {
             //APPARENTLY THIS SCANS FOR, CONNECTS TO, THEN STARTS COLLECTING DATA
-            bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
-            //bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback2)
+            //bleScanner.startScan(mutableListOf(scanFilter), scanSettings, scanCallback)
+            //going to try getting a list of devices
+            bleScanner.startScan(listScanCallback)
         }
 
         autoConnectButton.setOnClickListener {
